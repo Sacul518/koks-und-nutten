@@ -1,0 +1,60 @@
+SPIELIDEE: "Koks und Nutten" (Arbeitstitel, Anspielung auf Bender-Spruch aus Futurama)
+
+KONZEPT
+Tycoon-/Factory-Game im Drogenimperium-Setting. Spieler bauen aus dem Nichts ein
+Imperium auf und maximieren ihren Gewinn. Fokus liegt auf Aufbau, Automatisierung
+und Optimierung von Produktionsketten/Workflows - nicht auf Story. Story-Elemente
+sind minimal und dienen nur als Rahmen.
+
+TECHNIK / ARCHITEKTUR
+- Server: Raspberry Pi 4 im lokalen Netzwerk
+- Clients: beliebige Geräte im selben WLAN (primär iPad 9. Gen), Zugriff via
+  Browser (Safari) über die IP des Pi - kein Client-Install nötig
+- Ablauf: Spieler ruft IP im Browser auf -> vergibt Benutzernamen -> tritt der
+  Session bei
+- Input-Besonderheit: iPads haben eine Tastatur, aber KEINE Maus. Steuerung muss
+  Touch (Bewegung, Interaktion mit Objekten/Welt) und Tastatur (Shortcuts, Menüs,
+  Hotbar) kombinieren. Zentrales UX-Problem, das früh im Design gelöst werden muss.
+- Autostart: Server-Prozess startet automatisch, sobald der Pi bootet (z. B. als
+  systemd-Service) - kein manuelles Starten nötig, Pi einstecken reicht
+- Admin-Panel: eigener Bereich, getrennt vom Spieler-Interface, mit:
+  - manuellem Speichern des aktuellen Spielstands
+  - sicherem Shutdown-Button: schreibt zuerst den Spielstand konsistent weg,
+    fährt danach den Pi sauber runter (kein Stromziehen, keine korrupten Saves)
+  - Status-Übersicht (verbundene Spieler, Serverzustand)
+- Auto-Save: zusätzlich zum manuellen Save-Button ein automatisches
+  Speicherintervall (z. B. alle 5 Minuten), falls der Strom wegfällt, bevor
+  jemand den Shutdown-Button drückt
+
+GAMEPLAY
+- Grafik: 2,5D-Welt
+- Spielerzahl: bis zu 4, primär Koop (PvP später, nicht im ersten Scope)
+- Kernloop: Produktionsketten aufbauen, automatisieren, schrittweise optimieren,
+  Imperium über Zeit skalieren
+- Drogenspektrum wächst über Zeit/Progression (mehr Sorten werden nach und nach
+  freigeschaltet)
+- NPCs als Käufer (Verkaufsziel für die Ware)
+- Welt: groß, aber NICHT unendlich - klar begrenzte Kartengröße
+- Rivalisierende Gangster als Konkurrenz/Gefahrenquelle
+- Gute, übersichtliche Menüs (Settings, Inventar, Baumenü etc.)
+
+OFFENE ERGÄNZUNGSVORSCHLÄGE (noch nicht final entschieden)
+- Heat/Fahndungssystem: je mehr/offener verkauft wird, desto höher die
+  Polizeiaufmerksamkeit -> Razzien, Bestechung als Gegenmaßnahme
+- Reviere/Territorien: Karte in Zonen aufgeteilt, die von Spielern oder Rivalen
+  kontrolliert werden - verbindet "Rivalen" und "große, begrenzte Welt"
+- Geldwäsche über Fronts: Läden/Bars als Tarnung fürs Einkommen
+- Rollenteilung im Koop: z. B. einer managt Produktion, einer Vertrieb/NPCs,
+  einer Sicherheit/Reviere - gibt den bis zu 4 Spielern unterschiedliche
+  sinnvolle Aufgaben
+- Random Events: abgefangene Lieferung, Undercover-Cop, Marktpreis-Schwankungen
+- Persistenter Serverzustand: Pi läuft durchgehend, Spieler können jederzeit
+  joinen/verlassen
+
+SCOPE (v1)
+- Koop für bis zu 4 Spieler
+- Kernloop: Geld verdienen durch Aufbau und Optimierung
+- Autostart, Admin-Panel (Save + sicherer Shutdown) und Auto-Save sind
+  Grundvoraussetzung, kein optionales Feature
+- Kein/kaum Story-Content
+- PvP: explizit nicht in v1, später denkbar

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Koks und Nutten</title>
+  </head>
+  <body>
+    <div id="game"></div>
+
+    <div id="join-overlay">
+      <div id="join-box">
+        <h1>Koks und Nutten</h1>
+        <p class="subtitle">Baue dein Imperium auf.</p>
+        <form id="join-form">
+          <input
+            id="name-input"
+            type="text"
+            maxlength="16"
+            placeholder="Dein Name"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+          />
+          <button id="join-button" type="submit">Beitreten</button>
+        </form>
+        <p id="join-error"></p>
+      </div>
+    </div>
+
+    <div id="hud" hidden>
+      <div id="player-list"></div>
+      <div id="controls-hint">Tippen = laufen &nbsp;·&nbsp; Ziehen = Karte &nbsp;·&nbsp; WASD läuft &nbsp;·&nbsp; C = Kamera zentrieren</div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
