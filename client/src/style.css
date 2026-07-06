@@ -33,6 +33,11 @@ body {
   z-index: 10;
 }
 
+/* muss die display:flex-Regel oben schlagen, sonst bleibt das Overlay sichtbar */
+#join-overlay[hidden] {
+  display: none;
+}
+
 #join-box {
   text-align: center;
   padding: 2rem;
