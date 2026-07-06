@@ -1,0 +1,5 @@
+# Erlaubt dem Spielserver-User ausschließlich das saubere Herunterfahren des
+# Pi — sonst nichts. Vorlage: __USER__ wird von deploy/install.sh ersetzt und
+# die Datei nach /etc/sudoers.d/koks installiert (Rechte 440, Prüfung mit
+# `visudo -c`).
+__USER__ ALL=(root) NOPASSWD: /sbin/shutdown -h now

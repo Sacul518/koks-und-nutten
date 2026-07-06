@@ -24,6 +24,24 @@ npm start
 
 Danach läuft alles unter `http://<IP>:3000` — Name eingeben, beitreten.
 
+## Admin-Panel & Spielstände
+
+- Admin-Panel: `http://<IP>:3000/admin` (im Dev-Modus `http://localhost:5173/admin`).
+  Zeigt Spieler, Uptime, Ticks/s und den letzten Save; Buttons für „Jetzt
+  speichern" und „Speichern & Pi herunterfahren".
+- Passwort: Env-Variable `ADMIN_PASSWORD`, Default `koks-admin` (fürs LAN ok).
+- Spielstände liegen als JSON in `saves/` (Auto-Save alle 5 Minuten, Save beim
+  Beenden, 5 rotierende Backups). Der Karten-Seed steckt im Save — nach einem
+  Neustart ist die Stadt identisch.
+- Der Shutdown-Button fährt den Rechner nur herunter, wenn `SHUTDOWN_ENABLED=1`
+  gesetzt ist (macht die systemd-Unit auf dem Pi); in der Entwicklung wird nur
+  gespeichert und geloggt.
+
+## Raspberry Pi
+
+Autostart per systemd, Installation und Update: siehe `deploy/README.md`
+(Schritt-für-Schritt-Anleitung, `deploy/install.sh` erledigt fast alles).
+
 ## Steuerung
 
 | Eingabe | Aktion |

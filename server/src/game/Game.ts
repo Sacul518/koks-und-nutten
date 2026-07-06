@@ -20,6 +20,16 @@ import {
 } from "@koks/shared";
 
 const PLAYER_RADIUS = 0.3;
+const TICK_SAMPLE_WINDOW_MS = 5000;
+
+/** Persistierter Teil eines Spielers (fürs Save; Zuordnung beim Rejoin über den Namen). */
+export interface SavedPlayer {
+  name: string;
+  x: number;
+  y: number;
+  dir: Direction;
+  avatar: number;
+}
 
 export interface GamePlayer {
   id: string;
@@ -43,10 +53,14 @@ export class Game {
   readonly players = new Map<string, GamePlayer>();
   private nextId = 1;
   private timer: NodeJS.Timeout | null = null;
+  /** Zuletzt bekannte Zustände nicht verbundener Spieler, Schlüssel = Name (kleingeschrieben) */
+  private readonly offline = new Map<string, SavedPlayer>();
+  private tickTimes: number[] = [];
 
-  constructor(seed: number) {
+  constructor(seed: number, savedPlayers: SavedPlayer[] = []) {
     this.seed = seed;
     this.map = generateCity(seed);
+    for (const p of savedPlayers) this.offline.set(p.name.toLowerCase(), p);
   }
 
   start(): void {
@@ -77,14 +91,20 @@ export class Game {
     const usedAvatars = new Set([...this.players.values()].map((p) => p.avatar));
     let avatar = 0;
     while (usedAvatars.has(avatar) && avatar < MAX_PLAYERS - 1) avatar++;
+
+    // Bekannter Spieler (aus dem Save)? Dann an der alten Position weitermachen.
+    const saved = this.offline.get(name.toLowerCase());
+    const restore = saved && this.canStandAt(saved.x, saved.y) ? saved : null;
+    this.offline.delete(name.toLowerCase());
+
     const player: GamePlayer = {
       id: `p${this.nextId++}`,
       name,
-      x: spawn.x + 0.5,
-      y: spawn.y + 0.5,
-      dir: "down",
+      x: restore ? restore.x : spawn.x + 0.5,
+      y: restore ? restore.y : spawn.y + 0.5,
+      dir: restore ? restore.dir : "down",
       moving: false,
-      avatar,
+      avatar: restore ? restore.avatar : avatar,
       sprinting: false,
       path: null,
       input: { dx: 0, dy: 0 },
@@ -95,9 +115,11 @@ export class Game {
   }
 
   leave(id: string): void {
-    if (this.players.delete(id)) {
-      this.broadcast({ t: "playerLeft", id });
-    }
+    const player = this.players.get(id);
+    if (!player) return;
+    this.offline.set(player.name.toLowerCase(), toSavedPlayer(player));
+    this.players.delete(id);
+    this.broadcast({ t: "playerLeft", id });
   }
 
   handleMessage(player: GamePlayer, msg: ClientMessage): void {
@@ -136,11 +158,36 @@ export class Game {
     }));
   }
 
+  /** Persistierbarer Spielerbestand: verbundene Spieler + zuletzt bekannte Offline-Spieler. */
+  savedPlayers(): SavedPlayer[] {
+    const byName = new Map(this.offline);
+    for (const p of this.players.values()) {
+      byName.set(p.name.toLowerCase(), toSavedPlayer(p));
+    }
+    return [...byName.values()];
+  }
+
+  /** Gemessene Tickrate über die letzten Sekunden (Soll: TICK_RATE). */
+  ticksPerSecond(): number {
+    if (this.tickTimes.length < 2) return 0;
+    const first = this.tickTimes[0]!;
+    const last = this.tickTimes[this.tickTimes.length - 1]!;
+    const spanSeconds = (last - first) / 1000;
+    if (spanSeconds <= 0) return 0;
+    return Math.round(((this.tickTimes.length - 1) / spanSeconds) * 10) / 10;
+  }
+
   broadcast(msg: ServerMessage): void {
     for (const p of this.players.values()) p.send(msg);
   }
 
   private tick(): void {
+    const now = Date.now();
+    this.tickTimes.push(now);
+    while (this.tickTimes.length > 0 && this.tickTimes[0]! < now - TICK_SAMPLE_WINDOW_MS) {
+      this.tickTimes.shift();
+    }
+
     const dt = TICK_MS / 1000;
     for (const p of this.players.values()) this.movePlayer(p, dt);
     if (this.players.size > 0) {
@@ -217,6 +264,16 @@ export class Game {
     const cy = Math.floor(MAP_HEIGHT / 2) + Math.floor(index / 2) * 2;
     return findNearestWalkable(this.map, cx, cy);
   }
+}
+
+function toSavedPlayer(p: GamePlayer): SavedPlayer {
+  return {
+    name: p.name,
+    x: Math.round(p.x * 100) / 100,
+    y: Math.round(p.y * 100) / 100,
+    dir: p.dir,
+    avatar: p.avatar,
+  };
 }
 
 function directionOf(dx: number, dy: number, fallback: Direction): Direction {
