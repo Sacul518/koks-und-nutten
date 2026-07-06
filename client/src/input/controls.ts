@@ -3,6 +3,7 @@ export interface ControlCallbacks {
   onPan: (dx: number, dy: number) => void;
   onZoom: (factor: number, centerX: number, centerY: number) => void;
   onDirChange: (dx: -1 | 0 | 1, dy: -1 | 0 | 1) => void;
+  onSprintChange: (on: boolean) => void;
   onRecenter: () => void;
 }
 
@@ -81,10 +82,17 @@ export function attachControls(target: HTMLElement, cb: ControlCallbacks): void 
     cb.onZoom(e.deltaY < 0 ? 1.1 : 0.9, e.clientX, e.clientY);
   }, { passive: false });
 
-  // Tastatur: WASD / Pfeiltasten, C zum Zentrieren
+  // Tastatur: WASD / Pfeiltasten, Shift = Sprint, C zum Zentrieren
   const pressed = new Set<string>();
   let lastDx = 0;
   let lastDy = 0;
+  let sprinting = false;
+  const setSprint = (on: boolean) => {
+    if (on !== sprinting) {
+      sprinting = on;
+      cb.onSprintChange(on);
+    }
+  };
   const updateDir = () => {
     const dx = (pressed.has("d") || pressed.has("arrowright") ? 1 : 0) - (pressed.has("a") || pressed.has("arrowleft") ? 1 : 0);
     const dy = (pressed.has("s") || pressed.has("arrowdown") ? 1 : 0) - (pressed.has("w") || pressed.has("arrowup") ? 1 : 0);
@@ -96,6 +104,10 @@ export function attachControls(target: HTMLElement, cb: ControlCallbacks): void 
   };
   window.addEventListener("keydown", (e) => {
     const key = e.key.toLowerCase();
+    if (key === "shift") {
+      setSprint(true);
+      return;
+    }
     if (key === "c") {
       cb.onRecenter();
       return;
@@ -107,11 +119,17 @@ export function attachControls(target: HTMLElement, cb: ControlCallbacks): void 
     }
   });
   window.addEventListener("keyup", (e) => {
-    pressed.delete(e.key.toLowerCase());
+    const key = e.key.toLowerCase();
+    if (key === "shift") {
+      setSprint(false);
+      return;
+    }
+    pressed.delete(key);
     updateDir();
   });
   window.addEventListener("blur", () => {
     pressed.clear();
+    setSprint(false);
     updateDir();
   });
 }

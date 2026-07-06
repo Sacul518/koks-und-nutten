@@ -3,7 +3,8 @@ import type { PlayerSnapshot } from "./types.ts";
 export type ClientMessage =
   | { t: "join"; v: number; name: string }
   | { t: "moveTo"; x: number; y: number }
-  | { t: "input"; dx: -1 | 0 | 1; dy: -1 | 0 | 1 };
+  | { t: "input"; dx: -1 | 0 | 1; dy: -1 | 0 | 1 }
+  | { t: "sprint"; on: boolean };
 
 export type ServerMessage =
   | { t: "welcome"; id: string; seed: number; players: PlayerSnapshot[] }
@@ -37,6 +38,9 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
       if (ok(m.dx) && ok(m.dy)) return { t: "input", dx: m.dx, dy: m.dy };
       return null;
     }
+    case "sprint":
+      if (typeof m.on === "boolean") return { t: "sprint", on: m.on };
+      return null;
     default:
       return null;
   }

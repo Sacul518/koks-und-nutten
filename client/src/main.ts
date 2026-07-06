@@ -83,6 +83,7 @@ async function startGame(name: string): Promise<void> {
     onPan: (dx, dy) => camera.panBy(dx, dy),
     onZoom: (factor, cx, cy) => camera.zoomAt(factor, cx, cy, app.screen.width, app.screen.height),
     onDirChange: (dx, dy) => conn.send({ t: "input", dx, dy }),
+    onSprintChange: (on) => conn.send({ t: "sprint", on }),
     onRecenter: () => camera.recenter(),
   });
 

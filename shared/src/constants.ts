@@ -10,6 +10,8 @@ export const TILE_SIZE = 16;
 
 export const WALK_SPEED = 4.5;
 
+export const SPRINT_MULTIPLIER = 1.6;
+
 export const MAX_PLAYERS = 4;
 export const MAX_NAME_LENGTH = 16;
 

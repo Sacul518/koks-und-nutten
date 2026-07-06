@@ -3,6 +3,7 @@ import {
   MAP_WIDTH,
   MAX_NAME_LENGTH,
   MAX_PLAYERS,
+  SPRINT_MULTIPLIER,
   TICK_MS,
   WALK_SPEED,
   findNearestWalkable,
@@ -28,6 +29,7 @@ export interface GamePlayer {
   dir: Direction;
   moving: boolean;
   avatar: number;
+  sprinting: boolean;
   path: Vec2[] | null;
   input: { dx: number; dy: number };
   send: (msg: ServerMessage) => void;
@@ -83,6 +85,7 @@ export class Game {
       dir: "down",
       moving: false,
       avatar,
+      sprinting: false,
       path: null,
       input: { dx: 0, dy: 0 },
       send,
@@ -112,6 +115,9 @@ export class Game {
       case "input":
         player.input = { dx: msg.dx, dy: msg.dy };
         if (msg.dx !== 0 || msg.dy !== 0) player.path = null;
+        break;
+      case "sprint":
+        player.sprinting = msg.on;
         break;
       case "join":
         break;
@@ -143,10 +149,11 @@ export class Game {
   }
 
   private movePlayer(p: GamePlayer, dt: number): void {
+    const speed = WALK_SPEED * (p.sprinting ? SPRINT_MULTIPLIER : 1);
     const { dx, dy } = p.input;
     if (dx !== 0 || dy !== 0) {
       const len = Math.hypot(dx, dy);
-      const step = (WALK_SPEED * dt) / len;
+      const step = (speed * dt) / len;
       this.moveAxis(p, dx * step, 0);
       this.moveAxis(p, 0, dy * step);
       p.dir = directionOf(dx, dy, p.dir);
@@ -155,7 +162,7 @@ export class Game {
     }
 
     if (p.path && p.path.length > 0) {
-      let remaining = WALK_SPEED * dt;
+      let remaining = speed * dt;
       while (remaining > 0 && p.path && p.path.length > 0) {
         const wp = p.path[0]!;
         const tx = wp.x + 0.5;
