@@ -1,10 +1,11 @@
 import { Container, Sprite, Text } from "pixi.js";
 import { TICK_MS, TILE_SIZE, type PlayerSnapshot } from "@koks/shared";
-import type { GameTextures } from "./assets.ts";
+import type { AvatarTextures, GameTextures } from "./assets.ts";
 
 interface RenderedPlayer {
   root: Container;
   sprite: Sprite;
+  avatarSet: AvatarTextures;
   prevX: number;
   prevY: number;
   targetX: number;
@@ -36,7 +37,7 @@ export class PlayerLayer {
       rp.targetX = worldX;
       rp.targetY = worldY;
       rp.snapshotTime = now;
-      rp.sprite.scale.x = p.dir === "left" ? -1 : 1;
+      rp.sprite.texture = rp.avatarSet[p.dir];
     }
     for (const id of this.players.keys()) {
       if (!seen.has(id)) this.remove(id);
@@ -69,8 +70,8 @@ export class PlayerLayer {
     const root = new Container();
     root.position.set(x, y);
 
-    const texture = this.textures.avatars[p.avatar % this.textures.avatars.length]!;
-    const sprite = new Sprite(texture);
+    const avatarSet = this.textures.avatars[p.avatar % this.textures.avatars.length]!;
+    const sprite = new Sprite(avatarSet[p.dir]);
     sprite.anchor.set(0.5, 0.75);
     root.addChild(sprite);
 
@@ -91,6 +92,7 @@ export class PlayerLayer {
     return {
       root,
       sprite,
+      avatarSet,
       prevX: x,
       prevY: y,
       targetX: x,
