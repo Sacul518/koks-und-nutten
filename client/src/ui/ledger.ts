@@ -1,4 +1,5 @@
 import {
+  BRIBE_COST_PER_PERIOD,
   BUILDING_SPECS,
   DISTRICT_GRID,
   LEDGER_PERIOD_S,
@@ -36,6 +37,7 @@ export class LedgerScreen {
   private readonly tableEl = document.getElementById("ledger-table")!;
   private readonly canvas = document.getElementById("ledger-chart") as HTMLCanvasElement;
   private readonly chartInfoEl = document.getElementById("ledger-chart-info")!;
+  private readonly bribeButton = document.getElementById("bribe-button") as HTMLButtonElement;
   private readonly personalEl = document.getElementById("ledger-personal")!;
 
   private history: LedgerPeriod[] = [];
@@ -47,6 +49,10 @@ export class LedgerScreen {
   constructor(private readonly send: (msg: ClientMessage) => void, private readonly priceFactors: number[]) {
     (document.getElementById("ledger-close") as HTMLButtonElement).onclick = () => this.close();
     this.canvas.onpointerdown = (e) => this.inspectChart(e);
+    this.bribeButton.onclick = () => {
+      const bribing = this.latest?.me?.bribing ?? false;
+      this.send({ t: "bribe", on: !bribing });
+    };
     this.root.hidden = true;
     this.chartSignature = "";
     this.personalSignature = "";
@@ -90,7 +96,18 @@ export class LedgerScreen {
     this.periodEl.textContent = `Periode #${ledger.n} · endet in ${remaining} s · Team-weit`;
     this.renderTable(ledger);
     this.renderChart(ledger);
+    this.renderBribe();
     this.renderPersonal();
+  }
+
+  // ── Bestechung ───────────────────────────────────────────────────────────
+
+  private renderBribe(): void {
+    const bribing = this.latest?.me?.bribing ?? false;
+    this.bribeButton.textContent = bribing
+      ? "Bestechung: AN — abschalten"
+      : `Bestechung: AUS (${BRIBE_COST_PER_PERIOD} €/Periode) — anschalten`;
+    this.bribeButton.classList.toggle("bribe-active", bribing);
   }
 
   // ── Zahlen-Tabelle ─────────────────────────────────────────────────────────
@@ -115,6 +132,8 @@ export class LedgerScreen {
       { label: "· Samen", get: (p) => p.seedCost, fmt: euro, cls: "ledger-sub" },
       { label: "· Löhne", get: (p) => p.wageCost, fmt: euro, cls: "ledger-sub" },
       { label: "· Bau", get: (p) => p.buildCost, fmt: euro, cls: "ledger-sub" },
+      { label: "· Razzien", get: (p) => p.raidLoss, fmt: euro, cls: "ledger-sub" },
+      { label: "· Bestechung", get: (p) => p.bribeCost, fmt: euro, cls: "ledger-sub" },
       { label: "Gewinn", get: ledgerProfit, fmt: (v) => `${v >= 0 ? "+" : ""}${v} €`, cls: "ledger-profit" },
       { label: "Geerntet", get: (p) => p.harvested },
       { label: "Getrocknet", get: (p) => p.dried },

@@ -180,6 +180,10 @@ body {
   color: #f0b060;
 }
 
+.stat.stat-heat .stat-value {
+  color: #ff7a7a;
+}
+
 /* ── Buttons & Panels (Touch: min. 44px hoch) ── */
 
 #build-button {
@@ -476,6 +480,15 @@ body {
   font-size: 0.8rem;
   color: #9a9aa8;
   margin: 0.4rem 0 0.75rem;
+}
+
+#bribe-button {
+  width: 100%;
+  margin-bottom: 0.75rem;
+}
+
+#bribe-button.bribe-active {
+  background: #8c2828;
 }
 
 #ledger-personal {

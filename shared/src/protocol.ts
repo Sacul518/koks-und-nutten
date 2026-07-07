@@ -28,7 +28,9 @@ export type ClientMessage =
   | { t: "sell"; npcId: string }
   // M3: Arbeiter
   | { t: "hire"; kind: WorkerKind; buildingId: string; targetBuildingId?: string; district?: number }
-  | { t: "fire"; workerId: string };
+  | { t: "fire"; workerId: string }
+  // M4: Bestechung
+  | { t: "bribe"; on: boolean };
 
 export type ServerMessage =
   | { t: "welcome"; id: string; seed: number; players: PlayerSnapshot[] }
@@ -48,7 +50,9 @@ export type ServerMessage =
   /** Abgelehnte Aktion (nur an den auslösenden Spieler) */
   | { t: "actionError"; reason: string }
   /** Erfolgreicher Baggie-Verkauf (nur an den Verkäufer) */
-  | { t: "sold"; price: number };
+  | { t: "sold"; price: number }
+  /** M4: Razzia in einem eigenen Gebäude (nur an den Besitzer, falls online) */
+  | { t: "raided"; buildingId: string; buildingKind: BuildingKind; lossValue: number };
 
 export function parseClientMessage(raw: unknown): ClientMessage | null {
   if (typeof raw !== "string") return null;
@@ -121,6 +125,9 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
     }
     case "fire":
       if (typeof m.workerId === "string") return { t: "fire", workerId: m.workerId };
+      return null;
+    case "bribe":
+      if (typeof m.on === "boolean") return { t: "bribe", on: m.on };
       return null;
     default:
       return null;

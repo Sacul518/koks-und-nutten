@@ -135,6 +135,8 @@ async function startGame(name: string): Promise<void> {
   conn.onActionError = (reason) => hud.toast(reason, "error");
   conn.onSold = (price) => hud.toast(`Verkauft: +${price} € (schmutzig)`, "ok");
   conn.onLedgerHistory = (history) => ledger.setHistory(history);
+  conn.onRaided = (_buildingId, buildingKind, lossValue) =>
+    hud.toast(`Razzia im ${BUILDING_SPECS[buildingKind].name}: ${lossValue} € Warenverlust!`, "error");
   conn.onDisconnect = () => {
     started = false;
     panels.close();

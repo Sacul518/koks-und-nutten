@@ -1,5 +1,7 @@
 import {
   BAGGIES_PER_DRIED,
+  BRIBE_COST_PER_PERIOD,
+  BRIBE_GAIN_MULT,
   BUILDING_SPECS,
   DEALER_CAPACITY,
   DEALER_SELL_TIME_S,
@@ -9,6 +11,9 @@ import {
   GROWBOX_STORE_MAX,
   GROW_TIME_S,
   HARVEST_YIELD,
+  HEAT_DECAY_PER_S,
+  HEAT_MAX,
+  HEAT_PER_SALE,
   INTERACT_RANGE,
   KURIER_CAPACITY,
   LEDGER_HISTORY_MAX,
@@ -22,6 +27,11 @@ import {
   NPC_WALK_SPEED,
   PACK_QUEUE_MAX,
   PACK_TIME_S,
+  RAID_CHANCE_AT_MAX_HEAT,
+  RAID_CHECK_INTERVAL_S,
+  RAID_VALUE_PER_BAGGIE,
+  RAID_VALUE_PER_DRIED,
+  RAID_VALUE_PER_HARVEST,
   SEED_PRICE,
   SELL_RANGE,
   SPRINT_MULTIPLIER,
@@ -71,6 +81,10 @@ export interface SavedPlayer {
   moneyClean: number;
   moneyDirty: number;
   inv: Inventory;
+  /** M4: Fahndungsdruck 0..HEAT_MAX. */
+  heat: number;
+  /** M4: Bestechung aktiv (laufende Kosten pro Ledger-Periode). */
+  bribing: boolean;
 }
 
 /** Gebäude — Laufzeit- und Save-Format sind identisch. */
@@ -150,6 +164,10 @@ export interface GamePlayer {
   moneyClean: number;
   moneyDirty: number;
   inv: Inventory;
+  /** M4: Fahndungsdruck 0..HEAT_MAX — steigt pro Verkauf, zerfällt über Zeit. */
+  heat: number;
+  /** M4: Bestechung aktiv (laufende Kosten pro Ledger-Periode, dämpft Heat-Zuwachs). */
+  bribing: boolean;
   send: (msg: ServerMessage) => void;
 }
 
@@ -181,6 +199,8 @@ export class Game {
   private timer: NodeJS.Timeout | null = null;
   /** Zuletzt bekannte Zustände nicht verbundener Spieler, Schlüssel = Name (kleingeschrieben) */
   private readonly offline = new Map<string, SavedPlayer>();
+  /** M4: Razzia-Check-Timer je Spieler (Name klein), läuft mit prodDt — bewusst nicht persistiert. */
+  private readonly raidTimers = new Map<string, number>();
   private tickTimes: number[] = [];
   /** Dev-Zeitraffer (TIME_SCALE): beschleunigt Produktion, NPC-Cooldowns und Ledger-Perioden. */
   private readonly timeScale: number;
@@ -271,6 +291,8 @@ export class Game {
       moneyClean: saved ? saved.moneyClean : START_MONEY_CLEAN,
       moneyDirty: saved ? saved.moneyDirty : START_MONEY_DIRTY,
       inv: saved ? { ...saved.inv } : { seeds: 0, harvest: 0, dried: 0, baggies: 0 },
+      heat: saved ? saved.heat : 0,
+      bribing: saved ? saved.bribing : false,
       send,
     };
     this.players.set(player.id, player);
@@ -326,6 +348,9 @@ export class Game {
       case "fire":
         this.handleFire(player, msg.workerId);
         break;
+      case "bribe":
+        player.bribing = msg.on;
+        break;
       case "join":
         break;
     }
@@ -342,6 +367,8 @@ export class Game {
       avatar: p.avatar,
       money: { clean: p.moneyClean, dirty: p.moneyDirty },
       inv: { ...p.inv },
+      heat: Math.round(p.heat * 10) / 10,
+      bribing: p.bribing,
     }));
   }
 
@@ -630,6 +657,7 @@ export class Game {
     this.ledger.income += price;
     this.ledger.sales++;
     player.send({ t: "sold", price });
+    this.addHeatByName(player.name, HEAT_PER_SALE * (player.bribing ? BRIBE_GAIN_MULT : 1));
   }
 
   // ── M3: Arbeiter anheuern/entlassen ────────────────────────────────────────
@@ -747,6 +775,44 @@ export class Game {
     return null;
   }
 
+  /** Heat eines Spielers (online oder offline) um `amount` verändern, gedeckelt auf [0, HEAT_MAX]. */
+  private addHeatByName(name: string, amount: number): void {
+    const online = this.playerByName(name);
+    if (online) online.heat = Math.min(HEAT_MAX, Math.max(0, online.heat + amount));
+    const off = this.offline.get(name.toLowerCase());
+    if (off) off.heat = Math.min(HEAT_MAX, Math.max(0, off.heat + amount));
+  }
+
+  /** Aktuellen Heat-Wert eines Spielers (online oder offline) lesen. */
+  private heatByName(name: string): number {
+    const online = this.playerByName(name);
+    if (online) return online.heat;
+    return this.offline.get(name.toLowerCase())?.heat ?? 0;
+  }
+
+  /** Bestechungsstatus eines Spielers (online oder offline) lesen. */
+  private isBribing(name: string): boolean {
+    const online = this.playerByName(name);
+    if (online) return online.bribing;
+    return this.offline.get(name.toLowerCase())?.bribing ?? false;
+  }
+
+  /** Bestechungsstatus eines Spielers (online oder offline) setzen — z. B. bei leerem Konto. */
+  private setBribing(name: string, value: boolean): void {
+    const online = this.playerByName(name);
+    if (online) online.bribing = value;
+    const off = this.offline.get(name.toLowerCase());
+    if (off) off.bribing = value;
+  }
+
+  /** Alle Spielernamen (kleingeschrieben), die dem Server bekannt sind — online + offline. */
+  private allPlayerNames(): Set<string> {
+    const names = new Set<string>();
+    for (const p of this.players.values()) names.add(p.name.toLowerCase());
+    for (const name of this.offline.keys()) names.add(name);
+    return names;
+  }
+
   /** Gebäude für eine Aktion holen; String = Ablehnungsgrund. */
   private usableBuilding(player: GamePlayer, id: string, kind?: BuildingKind): SavedBuilding | string {
     const b = this.buildings.get(id);
@@ -788,6 +854,8 @@ export class Game {
     for (const n of this.npcs.values()) this.tickNpc(n, dt, prodDt);
     for (const b of this.buildings.values()) this.tickBuilding(b, prodDt);
     for (const w of this.workers.values()) this.tickWorker(w, dt, prodDt);
+    this.tickHeat(prodDt);
+    this.tickRaids(prodDt);
     this.tickLedger(prodDt);
     if (this.players.size > 0) {
       this.broadcast({
@@ -831,6 +899,67 @@ export class Game {
         w.moving = false;
       }
     }
+    for (const name of this.allPlayerNames()) {
+      if (!this.isBribing(name)) continue;
+      if (this.chargeOwner(name, BRIBE_COST_PER_PERIOD)) {
+        this.ledger.bribeCost += BRIBE_COST_PER_PERIOD;
+      } else {
+        this.setBribing(name, false);
+      }
+    }
+  }
+
+  // ── M4: Heat & Razzien ─────────────────────────────────────────────────────
+
+  /** Passiver Heat-Abbau über Zeit, für jeden bekannten Spieler (online + offline). */
+  private tickHeat(prodDt: number): void {
+    for (const p of this.players.values()) p.heat = Math.max(0, p.heat - HEAT_DECAY_PER_S * prodDt);
+    for (const off of this.offline.values()) off.heat = Math.max(0, off.heat - HEAT_DECAY_PER_S * prodDt);
+  }
+
+  /** Razzia-Timer je Spieler; bei Ablauf wird für diesen Spieler gewürfelt. */
+  private tickRaids(prodDt: number): void {
+    for (const name of this.allPlayerNames()) {
+      const t = (this.raidTimers.get(name) ?? 0) + prodDt;
+      if (t < RAID_CHECK_INTERVAL_S) {
+        this.raidTimers.set(name, t);
+        continue;
+      }
+      this.raidTimers.set(name, 0);
+      this.tryRaid(name);
+    }
+  }
+
+  /** Würfelt eine Razzia für einen Spieler aus und konfisziert ggf. gelagerte Ware. */
+  private tryRaid(name: string): void {
+    const heat = this.heatByName(name);
+    if (heat <= 0) return;
+    const owned = [...this.buildings.values()].filter((b) => b.owner.toLowerCase() === name);
+    if (owned.length === 0) return;
+    const chance = RAID_CHANCE_AT_MAX_HEAT * (heat / HEAT_MAX) ** 2;
+    if (Math.random() >= chance) return;
+
+    const b = owned[Math.floor(Math.random() * owned.length)]!;
+    let lossValue = 0;
+    switch (b.kind) {
+      case "growbox":
+        lossValue = b.harvestStore * RAID_VALUE_PER_HARVEST;
+        b.harvestStore = 0;
+        break;
+      case "trockenraum":
+        lossValue = b.dried * RAID_VALUE_PER_DRIED;
+        b.dried = 0;
+        break;
+      case "packtisch":
+        lossValue = b.baggies * RAID_VALUE_PER_BAGGIE;
+        b.baggies = 0;
+        break;
+    }
+    if (lossValue <= 0) return;
+
+    this.ledger.raidLoss += lossValue;
+    const online = this.playerByName(name);
+    if (online) online.send({ t: "raided", buildingId: b.id, buildingKind: b.kind, lossValue });
   }
 
   private tickBuilding(b: SavedBuilding, dt: number): void {
@@ -1052,6 +1181,7 @@ export class Game {
           npc.cooldownS = NPC_BUY_COOLDOWN_S;
           this.ledger.income += price;
           this.ledger.sales++;
+          this.addHeatByName(w.owner, HEAT_PER_SALE * (this.isBribing(w.owner) ? BRIBE_GAIN_MULT : 1));
           w.targetNpcId = null;
         }
         return;
@@ -1230,6 +1360,8 @@ function toSavedPlayer(p: GamePlayer): SavedPlayer {
     moneyClean: p.moneyClean,
     moneyDirty: p.moneyDirty,
     inv: { ...p.inv },
+    heat: p.heat,
+    bribing: p.bribing,
   };
 }
 

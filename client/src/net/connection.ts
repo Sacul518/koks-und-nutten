@@ -1,5 +1,6 @@
 import {
   PROTOCOL_VERSION,
+  type BuildingKind,
   type ClientMessage,
   type LedgerPeriod,
   type PlayerSnapshot,
@@ -20,6 +21,7 @@ export class Connection {
   onActionError: ((reason: string) => void) | null = null;
   onSold: ((price: number) => void) | null = null;
   onLedgerHistory: ((history: LedgerPeriod[]) => void) | null = null;
+  onRaided: ((buildingId: string, buildingKind: BuildingKind, lossValue: number) => void) | null = null;
 
   join(name: string): Promise<JoinSuccess> {
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -56,6 +58,9 @@ export class Connection {
             break;
           case "ledgerHistory":
             this.onLedgerHistory?.(msg.history);
+            break;
+          case "raided":
+            this.onRaided?.(msg.buildingId, msg.buildingKind, msg.lossValue);
             break;
         }
       };

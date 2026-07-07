@@ -23,6 +23,7 @@ export class Hud {
     inv.replaceChildren();
     this.addStat(money, "clean", "geld-sauber.png", "Sauber", "€", "stat-clean");
     this.addStat(money, "dirty", "geld-schmutzig.png", "Schmutzig", "€", "stat-dirty");
+    this.addStat(money, "heat", "heat.png", "Heat", "", "stat-heat");
     this.addStat(inv, "seeds", "samen.png", "Samen", "");
     this.addStat(inv, "harvest", "ernte.png", "Ernte", "");
     this.addStat(inv, "dried", "weed.png", "Weed", "");
@@ -32,6 +33,7 @@ export class Hud {
   update(me: PlayerSnapshot): void {
     this.setStat("clean", me.money.clean);
     this.setStat("dirty", me.money.dirty);
+    this.setStat("heat", Math.round(me.heat));
     this.setStat("seeds", me.inv.seeds);
     this.setStat("harvest", me.inv.harvest);
     this.setStat("dried", me.inv.dried);

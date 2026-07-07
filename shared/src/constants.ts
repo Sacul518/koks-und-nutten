@@ -106,3 +106,28 @@ export const DEALER_CAPACITY = 10;
 export const DEALER_SELL_TIME_S = 6;
 /** Ernte-Zwischenlager der Growbox — ist es voll, wartet der Gärtner mit dem Ernten. */
 export const GROWBOX_STORE_MAX = 12;
+
+// ── M4: Heat & Polizei (Balancing) ──────────────────────────────────────────
+
+/** Heat-Zuwachs pro verkauftem Baggie (Spieler-Verkauf und Dealer gleichermaßen). */
+export const HEAT_PER_SALE = 4;
+/** Heat-Abbau pro Sekunde (läuft mit TIME_SCALE, wie Produktion). */
+export const HEAT_DECAY_PER_S = 0.3;
+/** Obergrenze des Heat-Werts je Spieler. */
+export const HEAT_MAX = 100;
+
+/** Abstand zwischen Razzia-Würfen je Spieler in Sekunden (läuft mit TIME_SCALE). */
+export const RAID_CHECK_INTERVAL_S = 20;
+/** Razzia-Wahrscheinlichkeit je Wurf bei Heat = HEAT_MAX; skaliert quadratisch mit Heat/HEAT_MAX. */
+export const RAID_CHANCE_AT_MAX_HEAT = 0.4;
+/** Geldwert eines beschlagnahmten Baggies (entspricht dem Basisverkaufspreis). */
+export const RAID_VALUE_PER_BAGGIE = BAGGIE_PRICE_BASE;
+/** Geldwert einer beschlagnahmten getrockneten Einheit (grobe Schätzung, < 2 Baggies). */
+export const RAID_VALUE_PER_DRIED = 15;
+/** Geldwert einer beschlagnahmten Ernte-Einheit (grobe Schätzung, roher Rohstoff). */
+export const RAID_VALUE_PER_HARVEST = 5;
+
+/** Bestechung: laufende Kosten pro Ledger-Periode, solange aktiv. */
+export const BRIBE_COST_PER_PERIOD = 15;
+/** Bestechung: Faktor auf den Heat-Zuwachs pro Verkauf, solange aktiv (dämpft, ersetzt nicht). */
+export const BRIBE_GAIN_MULT = 0.4;

@@ -12,7 +12,7 @@ import {
 import type { SavedBuilding, SavedLedger, SavedPlayer, SavedWorker } from "../game/Game.ts";
 
 /** Bei Format-Änderungen hochzählen und in migrate() einen Schritt ergänzen. */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 export const AUTOSAVE_INTERVAL_MS = 5 * 60_000;
 
@@ -146,6 +146,25 @@ function migrate(d: Record<string, unknown>): Record<string, unknown> {
     d.ledger = emptyLedger();
     d.saveVersion = 3;
   }
+  if (d.saveVersion === 3) {
+    // v3 → v4: Heat/Bestechung pro Spieler, Razzia-/Bestechungskosten im Ledger.
+    d.players = (Array.isArray(d.players) ? d.players : []).map((p) => ({
+      heat: 0,
+      bribing: false,
+      ...(p as Record<string, unknown>),
+    }));
+    const migrateLedgerPeriod = (p: unknown) => ({
+      raidLoss: 0,
+      bribeCost: 0,
+      ...(p as Record<string, unknown>),
+    });
+    const ledger = d.ledger as Record<string, unknown> | undefined;
+    if (ledger && typeof ledger === "object") {
+      if (ledger.current) ledger.current = migrateLedgerPeriod(ledger.current);
+      if (Array.isArray(ledger.history)) ledger.history = ledger.history.map(migrateLedgerPeriod);
+    }
+    d.saveVersion = 4;
+  }
   console.log(`[save] Spielstand von v${String(from)} auf v${String(d.saveVersion)} migriert`);
   return d;
 }
@@ -161,7 +180,9 @@ function isSavedPlayer(p: unknown): p is SavedPlayer {
     isDirection(d.dir) &&
     typeof d.moneyClean === "number" &&
     typeof d.moneyDirty === "number" &&
-    isInventory(d.inv)
+    isInventory(d.inv) &&
+    typeof d.heat === "number" &&
+    typeof d.bribing === "boolean"
   );
 }
 
@@ -221,9 +242,19 @@ function isSavedWorker(w: unknown): w is SavedWorker {
 function isLedgerPeriod(p: unknown): p is LedgerPeriod {
   if (typeof p !== "object" || p === null) return false;
   const d = p as Record<string, unknown>;
-  return ["n", "income", "seedCost", "wageCost", "buildCost", "sales", "harvested", "dried", "packed"].every(
-    (k) => typeof d[k] === "number",
-  );
+  return [
+    "n",
+    "income",
+    "seedCost",
+    "wageCost",
+    "buildCost",
+    "sales",
+    "harvested",
+    "dried",
+    "packed",
+    "raidLoss",
+    "bribeCost",
+  ].every((k) => typeof d[k] === "number");
 }
 
 function isSavedLedger(l: unknown): l is SavedLedger {

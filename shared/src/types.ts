@@ -45,6 +45,10 @@ export interface PlayerSnapshot {
   avatar: number;
   money: Money;
   inv: Inventory;
+  /** M4: Fahndungsdruck 0..HEAT_MAX — steigt pro Verkauf, zerfällt über Zeit. */
+  heat: number;
+  /** M4: Bestechung aktiv (kostet pro Periode, dämpft den Heat-Zuwachs). */
+  bribing: boolean;
 }
 
 // ── M2: Gebäude & Passanten ─────────────────────────────────────────────────
@@ -126,6 +130,10 @@ export interface LedgerPeriod {
   dried: number;
   /** Fertig verpackte Baggies. */
   packed: number;
+  /** M4: Warenverlust durch Razzien (€). */
+  raidLoss: number;
+  /** M4: Bestechungsgelder (€). */
+  bribeCost: number;
 }
 
 /** Laufende Periode im Snapshot: zusätzlich der Zeitfortschritt. */
@@ -134,11 +142,23 @@ export interface LedgerLive extends LedgerPeriod {
 }
 
 export function emptyLedgerPeriod(n: number): LedgerPeriod {
-  return { n, income: 0, seedCost: 0, wageCost: 0, buildCost: 0, sales: 0, harvested: 0, dried: 0, packed: 0 };
+  return {
+    n,
+    income: 0,
+    seedCost: 0,
+    wageCost: 0,
+    buildCost: 0,
+    sales: 0,
+    harvested: 0,
+    dried: 0,
+    packed: 0,
+    raidLoss: 0,
+    bribeCost: 0,
+  };
 }
 
 export function ledgerExpenses(p: LedgerPeriod): number {
-  return p.seedCost + p.wageCost + p.buildCost;
+  return p.seedCost + p.wageCost + p.buildCost + p.raidLoss + p.bribeCost;
 }
 
 export function ledgerProfit(p: LedgerPeriod): number {
