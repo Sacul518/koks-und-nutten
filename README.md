@@ -47,10 +47,28 @@ Autostart per systemd, Installation und Update: siehe `deploy/README.md`
 | Eingabe | Aktion |
 | --- | --- |
 | Tippen auf die Karte | Figur läuft dorthin (Wegfindung) |
+| Tippen auf eigenes Gebäude | Panel öffnen: Samen kaufen, Pflanzen, Ernten, Trocknen, Verpacken |
+| Tippen auf Passanten | Verkaufs-Panel (Baggie verkaufen, Preis je Distrikt) |
+| `B` oder „Bauen“-Button | Baumenü öffnen/schließen |
+| Im Baumodus: Tippen | Geist-Vorschau setzen (grün = baubar, rot = blockiert), dann „Bauen“ bestätigen |
+| `Esc` | Baumodus und Panels schließen |
 | Ziehen mit einem Finger | Karte verschieben |
 | Pinch mit zwei Fingern | Zoomen |
 | `W A S D` / Pfeiltasten | Figur direkt steuern |
+| `Shift` | Sprint |
 | `C` | Kamera wieder an die Figur heften |
+
+## Produktionskette (M2)
+
+Samen (20 €) → Growbox (90 s) → 3 Ernte → Trockenraum (60 s, Kapazität 8) →
+Packtisch (10 s je Einheit) → 2 Baggies je Einheit → Verkauf an Passanten
+(15 € × Distrikt-Faktor 0,7–1,4). Verkaufserlöse sind **schmutziges Geld**,
+das Startgeld (500 €) ist sauber — beide zahlen in M2 noch gleichwertig,
+die Trennung wird ab M5 (Geldwäsche) relevant. Alle Werte stehen in
+`shared/src/constants.ts`.
+
+Zum Testen der Kette ohne Wartezeit: Server mit `TIME_SCALE=30` starten
+(beschleunigt nur Produktion und NPC-Cooldowns, nicht die Bewegung).
 
 ## Struktur
 
@@ -58,4 +76,6 @@ Autostart per systemd, Installation und Update: siehe `deploy/README.md`
   Client und Server, es wird nur der Seed übertragen)
 - `server/` — Node.js: Simulation (10 Ticks/s), WebSocket, statische Dateien
 - `client/` — Vite + PixiJS: Rendering, Touch-/Tastatur-Steuerung
-- Grafiken: [Kenney RPG Urban Pack](https://kenney.nl/assets/rpg-urban-pack) (CC0)
+- Grafiken (alle CC0 von [Kenney](https://kenney.nl)): RPG Urban Pack (Stadt,
+  Figuren), Roguelike/RPG Pack (Beete, Pflanzen), Roguelike Indoors
+  (Trockenraum, Packtisch) — Details in `client/public/assets/CREDITS.md`

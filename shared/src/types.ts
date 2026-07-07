@@ -19,6 +19,20 @@ export interface Vec2 {
 
 export type Direction = "up" | "down" | "left" | "right";
 
+/** Getragene Items (Stückzahlen) — Spieler transportieren alles selbst. */
+export interface Inventory {
+  seeds: number;
+  harvest: number;
+  dried: number;
+  baggies: number;
+}
+
+/** Geld von Anfang an getrennt: Verkaufserlöse = schmutzig, Startgeld = sauber. */
+export interface Money {
+  clean: number;
+  dirty: number;
+}
+
 export interface PlayerSnapshot {
   id: string;
   name: string;
@@ -29,4 +43,39 @@ export interface PlayerSnapshot {
   moving: boolean;
   /** Index der Spielfigur (0-3), vom Server vergeben */
   avatar: number;
+  money: Money;
+  inv: Inventory;
+}
+
+// ── M2: Gebäude & Passanten ─────────────────────────────────────────────────
+
+export type BuildingKind = "growbox" | "trockenraum" | "packtisch";
+
+export function isBuildingKind(v: unknown): v is BuildingKind {
+  return v === "growbox" || v === "trockenraum" || v === "packtisch";
+}
+
+interface BuildingBase {
+  id: string;
+  x: number;
+  y: number;
+  /** Spielername des Erbauers — nur er kann das Gebäude bedienen. */
+  owner: string;
+}
+
+export type BuildingSnapshot =
+  | (BuildingBase & { kind: "growbox"; plant: number | null })
+  | (BuildingBase & { kind: "trockenraum"; drying: number[]; dried: number })
+  | (BuildingBase & { kind: "packtisch"; queue: number; packing: number | null; baggies: number });
+
+export interface NpcSnapshot {
+  id: string;
+  x: number;
+  y: number;
+  dir: Direction;
+  moving: boolean;
+  /** Index des Passanten-Sprites (0-1) */
+  skin: number;
+  /** Restliche Wartezeit in Sekunden, 0 = kaufbereit */
+  cooldown: number;
 }

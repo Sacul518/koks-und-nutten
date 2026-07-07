@@ -5,10 +5,17 @@ export interface ControlCallbacks {
   onDirChange: (dx: -1 | 0 | 1, dy: -1 | 0 | 1) => void;
   onSprintChange: (on: boolean) => void;
   onRecenter: () => void;
+  /** Taste B: Baumenü öffnen/schließen */
+  onBuildToggle: () => void;
+  /** Escape: Baumodus/Panel schließen */
+  onEscape: () => void;
 }
 
 const TAP_MAX_DISTANCE = 12;
 const TAP_MAX_MS = 400;
+
+/** Entfernt die window-Listener des vorherigen attachControls (Rejoin nach Disconnect). */
+let detachKeyboard: (() => void) | null = null;
 
 export function attachControls(target: HTMLElement, cb: ControlCallbacks): void {
   interface TrackedPointer {
@@ -102,7 +109,7 @@ export function attachControls(target: HTMLElement, cb: ControlCallbacks): void 
       cb.onDirChange(dx as -1 | 0 | 1, dy as -1 | 0 | 1);
     }
   };
-  window.addEventListener("keydown", (e) => {
+  const onKeyDown = (e: KeyboardEvent) => {
     const key = e.key.toLowerCase();
     if (key === "shift") {
       setSprint(true);
@@ -112,13 +119,21 @@ export function attachControls(target: HTMLElement, cb: ControlCallbacks): void 
       cb.onRecenter();
       return;
     }
+    if (key === "b") {
+      cb.onBuildToggle();
+      return;
+    }
+    if (key === "escape") {
+      cb.onEscape();
+      return;
+    }
     if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) {
       e.preventDefault();
       pressed.add(key);
       updateDir();
     }
-  });
-  window.addEventListener("keyup", (e) => {
+  };
+  const onKeyUp = (e: KeyboardEvent) => {
     const key = e.key.toLowerCase();
     if (key === "shift") {
       setSprint(false);
@@ -126,10 +141,19 @@ export function attachControls(target: HTMLElement, cb: ControlCallbacks): void 
     }
     pressed.delete(key);
     updateDir();
-  });
-  window.addEventListener("blur", () => {
+  };
+  const onBlur = () => {
     pressed.clear();
     setSprint(false);
     updateDir();
-  });
+  };
+  detachKeyboard?.();
+  window.addEventListener("keydown", onKeyDown);
+  window.addEventListener("keyup", onKeyUp);
+  window.addEventListener("blur", onBlur);
+  detachKeyboard = () => {
+    window.removeEventListener("keydown", onKeyDown);
+    window.removeEventListener("keyup", onKeyUp);
+    window.removeEventListener("blur", onBlur);
+  };
 }

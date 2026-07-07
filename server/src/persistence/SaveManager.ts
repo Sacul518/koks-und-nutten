@@ -1,9 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { SavedPlayer } from "../game/Game.ts";
+import { START_MONEY_CLEAN, START_MONEY_DIRTY, isBuildingKind, type Inventory } from "@koks/shared";
+import type { SavedBuilding, SavedPlayer } from "../game/Game.ts";
 
-/** Bei Format-Änderungen hochzählen und in load() eine Migration ergänzen. */
-export const SAVE_VERSION = 1;
+/** Bei Format-Änderungen hochzählen und in migrate() einen Schritt ergänzen. */
+export const SAVE_VERSION = 2;
 
 export const AUTOSAVE_INTERVAL_MS = 5 * 60_000;
 
@@ -15,6 +16,7 @@ export interface SaveGame {
   savedAt: string;
   seed: number;
   players: SavedPlayer[];
+  buildings: SavedBuilding[];
 }
 
 /**
@@ -83,21 +85,41 @@ export class SaveManager {
 
 function validateSave(data: unknown): SaveGame {
   if (typeof data !== "object" || data === null) throw new Error("kein Objekt");
-  const d = data as Record<string, unknown>;
+  let d = data as Record<string, unknown>;
   if (typeof d.saveVersion !== "number") throw new Error("saveVersion fehlt");
   if (d.saveVersion > SAVE_VERSION) {
     throw new Error(`saveVersion ${d.saveVersion} ist neuer als der Server (${SAVE_VERSION})`);
   }
-  // Hier später Migrationen für ältere Versionen einhängen (d.saveVersion < SAVE_VERSION).
+  if (d.saveVersion < SAVE_VERSION) d = migrate(d);
   if (typeof d.seed !== "number") throw new Error("seed fehlt");
   if (typeof d.savedAt !== "string") throw new Error("savedAt fehlt");
   const players = Array.isArray(d.players) ? d.players.filter(isSavedPlayer) : [];
+  const buildings = Array.isArray(d.buildings) ? d.buildings.filter(isSavedBuilding) : [];
   return {
-    saveVersion: d.saveVersion,
+    saveVersion: SAVE_VERSION,
     savedAt: d.savedAt,
     seed: d.seed,
     players,
+    buildings,
   };
+}
+
+/** Migrationskette: hebt ältere Spielstände Schritt für Schritt auf SAVE_VERSION. */
+function migrate(d: Record<string, unknown>): Record<string, unknown> {
+  const from = d.saveVersion;
+  if (d.saveVersion === 1) {
+    // v1 → v2: Geld + Inventar pro Spieler (Startwerte), leere Gebäudeliste.
+    d.players = (Array.isArray(d.players) ? d.players : []).map((p) => ({
+      moneyClean: START_MONEY_CLEAN,
+      moneyDirty: START_MONEY_DIRTY,
+      inv: { seeds: 0, harvest: 0, dried: 0, baggies: 0 },
+      ...(p as Record<string, unknown>),
+    }));
+    d.buildings = [];
+    d.saveVersion = 2;
+  }
+  console.log(`[save] Spielstand von v${String(from)} auf v${String(d.saveVersion)} migriert`);
+  return d;
 }
 
 function isSavedPlayer(p: unknown): p is SavedPlayer {
@@ -108,6 +130,39 @@ function isSavedPlayer(p: unknown): p is SavedPlayer {
     typeof d.x === "number" &&
     typeof d.y === "number" &&
     typeof d.avatar === "number" &&
-    (d.dir === "up" || d.dir === "down" || d.dir === "left" || d.dir === "right")
+    (d.dir === "up" || d.dir === "down" || d.dir === "left" || d.dir === "right") &&
+    typeof d.moneyClean === "number" &&
+    typeof d.moneyDirty === "number" &&
+    isInventory(d.inv)
+  );
+}
+
+function isInventory(inv: unknown): inv is Inventory {
+  if (typeof inv !== "object" || inv === null) return false;
+  const d = inv as Record<string, unknown>;
+  return (
+    typeof d.seeds === "number" &&
+    typeof d.harvest === "number" &&
+    typeof d.dried === "number" &&
+    typeof d.baggies === "number"
+  );
+}
+
+function isSavedBuilding(b: unknown): b is SavedBuilding {
+  if (typeof b !== "object" || b === null) return false;
+  const d = b as Record<string, unknown>;
+  return (
+    typeof d.id === "string" &&
+    isBuildingKind(d.kind) &&
+    typeof d.x === "number" &&
+    typeof d.y === "number" &&
+    typeof d.owner === "string" &&
+    (d.plantProgress === null || typeof d.plantProgress === "number") &&
+    Array.isArray(d.drying) &&
+    d.drying.every((v) => typeof v === "number") &&
+    typeof d.dried === "number" &&
+    typeof d.packQueue === "number" &&
+    (d.packProgress === null || typeof d.packProgress === "number") &&
+    typeof d.baggies === "number"
   );
 }

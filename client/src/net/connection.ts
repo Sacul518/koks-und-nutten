@@ -1,8 +1,9 @@
-import { PROTOCOL_VERSION, type ClientMessage, type ServerMessage } from "@koks/shared";
+import { PROTOCOL_VERSION, type ClientMessage, type PlayerSnapshot, type ServerMessage } from "@koks/shared";
 
 export interface JoinSuccess {
   id: string;
   seed: number;
+  players: PlayerSnapshot[];
 }
 
 export class Connection {
@@ -10,6 +11,8 @@ export class Connection {
   onSnapshot: ((msg: Extract<ServerMessage, { t: "snapshot" }>) => void) | null = null;
   onPlayerLeft: ((id: string) => void) | null = null;
   onDisconnect: (() => void) | null = null;
+  onActionError: ((reason: string) => void) | null = null;
+  onSold: ((price: number) => void) | null = null;
 
   join(name: string): Promise<JoinSuccess> {
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -26,7 +29,7 @@ export class Connection {
         switch (msg.t) {
           case "welcome":
             joined = true;
-            resolve({ id: msg.id, seed: msg.seed });
+            resolve({ id: msg.id, seed: msg.seed, players: msg.players });
             break;
           case "joinError":
             reject(new Error(msg.reason));
@@ -37,6 +40,12 @@ export class Connection {
             break;
           case "playerLeft":
             this.onPlayerLeft?.(msg.id);
+            break;
+          case "actionError":
+            this.onActionError?.(msg.reason);
+            break;
+          case "sold":
+            this.onSold?.(msg.price);
             break;
         }
       };

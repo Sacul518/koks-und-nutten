@@ -126,3 +126,216 @@ body {
   color: #b8b8c4;
   white-space: nowrap;
 }
+
+/* ── M2: Geld/Inventar oben rechts ── */
+
+#stats {
+  position: absolute;
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: flex-end;
+}
+
+#money-row,
+#inv-row {
+  display: flex;
+  gap: 0.5rem;
+  background: rgba(20, 22, 28, 0.75);
+  border-radius: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+}
+
+.stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+
+.stat-label {
+  color: #9a9aa8;
+  font-size: 0.75rem;
+}
+
+.stat-icon {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+  vertical-align: middle;
+}
+
+.stat-value {
+  font-variant-numeric: tabular-nums;
+}
+
+.stat.stat-clean .stat-value {
+  color: #7ee08a;
+}
+
+.stat.stat-dirty .stat-value {
+  color: #f0b060;
+}
+
+/* ── Buttons & Panels (Touch: min. 44px hoch) ── */
+
+#build-button {
+  position: absolute;
+  right: 0.75rem;
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  pointer-events: auto;
+  min-height: 48px;
+  padding: 0.6rem 1.2rem;
+  font-size: 1.05rem;
+  border: none;
+  border-radius: 0.6rem;
+  background: #4a6cf7;
+  color: white;
+}
+
+#build-button:active {
+  background: #3a56c4;
+}
+
+#toast {
+  position: absolute;
+  top: max(3.5rem, calc(env(safe-area-inset-top) + 2.75rem));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 0.95rem;
+  max-width: 80vw;
+  text-align: center;
+}
+
+#toast.error {
+  background: rgba(140, 40, 40, 0.92);
+}
+
+#toast.ok {
+  background: rgba(35, 110, 60, 0.92);
+}
+
+#build-menu,
+#panel {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: max(4.5rem, calc(env(safe-area-inset-bottom) + 3.75rem));
+  width: min(24rem, calc(100vw - 1.5rem));
+  background: rgba(24, 26, 34, 0.95);
+  border: 1px solid #3a3d4a;
+  border-radius: 0.75rem;
+  padding: 0.75rem;
+  pointer-events: auto;
+}
+
+.panel-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+#panel-body {
+  font-size: 0.9rem;
+  color: #c8c8d4;
+  line-height: 1.5;
+  margin-bottom: 0.6rem;
+}
+
+#build-options,
+#panel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.action-btn {
+  min-height: 48px;
+  padding: 0.5rem 0.9rem;
+  font-size: 1rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: #4a6cf7;
+  color: white;
+  text-align: left;
+}
+
+.action-btn:active:not(:disabled) {
+  background: #3a56c4;
+}
+
+.action-btn:disabled {
+  background: #2a2d38;
+  color: #70737f;
+}
+
+.build-option small {
+  color: #c3ccf5;
+  font-weight: 400;
+}
+
+.panel-close {
+  margin-top: 0.6rem;
+  width: 100%;
+  min-height: 44px;
+  font-size: 0.95rem;
+  border: 1px solid #3a3d4a;
+  border-radius: 0.5rem;
+  background: transparent;
+  color: #b8b8c4;
+}
+
+#build-bar {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: max(4.5rem, calc(env(safe-area-inset-bottom) + 3.75rem));
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: rgba(24, 26, 34, 0.95);
+  border: 1px solid #3a3d4a;
+  border-radius: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  pointer-events: auto;
+  max-width: calc(100vw - 1.5rem);
+}
+
+#build-bar-info {
+  font-size: 0.9rem;
+  color: #c8c8d4;
+}
+
+#build-bar button {
+  min-height: 48px;
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  border: none;
+  border-radius: 0.5rem;
+  white-space: nowrap;
+}
+
+#build-confirm {
+  background: #2e9e57;
+  color: white;
+}
+
+#build-confirm:disabled {
+  background: #2a2d38;
+  color: #70737f;
+}
+
+#build-cancel {
+  background: #8c2828;
+  color: white;
+}
+
+/* Panels/Buttons sind interaktiv, der Rest des HUD lässt Taps durch */
+#hud[hidden] {
+  display: none;
+}

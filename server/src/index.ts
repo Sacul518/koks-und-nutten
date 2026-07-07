@@ -27,14 +27,22 @@ const loadedSave = saves.load();
 // Der Seed aus dem Save gewinnt, damit die Karte nach einem Neustart identisch ist.
 const seed = loadedSave?.seed ?? Number(process.env.SEED ?? Math.floor(Math.random() * 2 ** 31));
 
-const game = new Game(seed, loadedSave?.players ?? []);
+// Dev-Zeitraffer: TIME_SCALE=30 lässt Produktion/Cooldowns 30× schneller laufen.
+const timeScale = Math.max(1, Number(process.env.TIME_SCALE ?? 1) || 1);
+
+const game = new Game(seed, loadedSave?.players ?? [], loadedSave?.buildings ?? [], timeScale);
 if (loadedSave) {
-  console.log(`[save] Spielstand geladen (Seed ${loadedSave.seed}, gespeichert ${loadedSave.savedAt})`);
+  console.log(
+    `[save] Spielstand geladen (Seed ${loadedSave.seed}, ${loadedSave.buildings.length} Gebäude, gespeichert ${loadedSave.savedAt})`,
+  );
+}
+if (timeScale > 1) {
+  console.log(`[dev] TIME_SCALE=${timeScale} — Produktion und NPC-Cooldowns laufen ${timeScale}× schneller`);
 }
 game.start();
 
 const saveNow = () => {
-  const save = saves.save({ seed: game.seed, players: game.savedPlayers() });
+  const save = saves.save({ seed: game.seed, players: game.savedPlayers(), buildings: game.savedBuildings() });
   console.log(`[save] Spielstand gespeichert (${save.savedAt})`);
   return save;
 };

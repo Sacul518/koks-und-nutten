@@ -6,13 +6,20 @@ const MAX_EXPANDED_NODES = 30000;
 /**
  * A* auf dem Tile-Raster (4 Richtungen). Liefert die Tile-Liste vom Start
  * (exklusive) bis zum Ziel (inklusive) oder null, wenn kein Weg existiert.
+ * Über `walkable` lässt sich einschränken, welche Tiles betreten werden
+ * (z. B. nur Straßen/Gehwege für Passanten-NPCs).
  */
-export function findPath(map: CityMap, start: Vec2, goal: Vec2): Vec2[] | null {
+export function findPath(
+  map: CityMap,
+  start: Vec2,
+  goal: Vec2,
+  walkable: (tile: number) => boolean = isWalkable,
+): Vec2[] | null {
   const sx = Math.floor(start.x);
   const sy = Math.floor(start.y);
   const gx = Math.floor(goal.x);
   const gy = Math.floor(goal.y);
-  if (!isWalkable(tileAt(map, gx, gy))) return null;
+  if (!walkable(tileAt(map, gx, gy))) return null;
   if (sx === gx && sy === gy) return [];
 
   const w = map.width;
@@ -83,7 +90,7 @@ export function findPath(map: CityMap, start: Vec2, goal: Vec2): Vec2[] | null {
       [cx, cy + 1],
     ] as const;
     for (const [nx, ny] of neighbors) {
-      if (!isWalkable(tileAt(map, nx, ny))) continue;
+      if (!walkable(tileAt(map, nx, ny))) continue;
       const nIdx = idx(nx, ny);
       const tentative = g + 1;
       if (tentative < (gScore.get(nIdx) ?? Infinity)) {

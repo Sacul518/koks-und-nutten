@@ -36,7 +36,36 @@
 
     <div id="hud" hidden>
       <div id="player-list"></div>
-      <div id="controls-hint">Tippen = laufen &nbsp;·&nbsp; Ziehen = Karte &nbsp;·&nbsp; WASD läuft &nbsp;·&nbsp; Shift = Sprint &nbsp;·&nbsp; C = Kamera zentrieren</div>
+
+      <div id="stats">
+        <div id="money-row"></div>
+        <div id="inv-row"></div>
+      </div>
+
+      <button id="build-button" type="button">Bauen (B)</button>
+
+      <div id="toast" hidden></div>
+
+      <div id="build-menu" hidden>
+        <div class="panel-title">Bauen</div>
+        <div id="build-options"></div>
+        <button id="build-menu-close" class="panel-close" type="button">Abbrechen</button>
+      </div>
+
+      <div id="build-bar" hidden>
+        <span id="build-bar-info"></span>
+        <button id="build-confirm" type="button">Bauen</button>
+        <button id="build-cancel" type="button">Abbrechen</button>
+      </div>
+
+      <div id="panel" hidden>
+        <div id="panel-title" class="panel-title"></div>
+        <div id="panel-body"></div>
+        <div id="panel-actions"></div>
+        <button id="panel-close" class="panel-close" type="button">Schließen</button>
+      </div>
+
+      <div id="controls-hint">Tippen = laufen/antippen &nbsp;·&nbsp; B = Bauen &nbsp;·&nbsp; WASD läuft &nbsp;·&nbsp; Shift = Sprint &nbsp;·&nbsp; C = zentrieren</div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>
