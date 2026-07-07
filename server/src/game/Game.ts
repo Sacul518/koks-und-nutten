@@ -1,11 +1,18 @@
 import {
   BAGGIES_PER_DRIED,
   BUILDING_SPECS,
+  DEALER_CAPACITY,
+  DEALER_SELL_TIME_S,
+  DISTRICT_GRID,
   DRY_CAPACITY,
   DRY_TIME_S,
+  GROWBOX_STORE_MAX,
   GROW_TIME_S,
   HARVEST_YIELD,
   INTERACT_RANGE,
+  KURIER_CAPACITY,
+  LEDGER_HISTORY_MAX,
+  LEDGER_PERIOD_S,
   MAP_HEIGHT,
   MAP_WIDTH,
   MAX_NAME_LENGTH,
@@ -23,8 +30,12 @@ import {
   TICK_MS,
   Tile,
   WALK_SPEED,
+  WORKER_SPECS,
+  WORKER_WALK_SPEED,
   baggiePriceAt,
+  districtIdAt,
   districtPriceFactors,
+  emptyLedgerPeriod,
   findNearestWalkable,
   findPath,
   generateCity,
@@ -36,10 +47,13 @@ import {
   type ClientMessage,
   type Direction,
   type Inventory,
+  type LedgerPeriod,
   type NpcSnapshot,
   type PlayerSnapshot,
   type ServerMessage,
   type Vec2,
+  type WorkerKind,
+  type WorkerSnapshot,
 } from "@koks/shared";
 
 const PLAYER_RADIUS = 0.3;
@@ -68,6 +82,8 @@ export interface SavedBuilding {
   owner: string;
   /** Growbox: Wachstumsfortschritt 0..1, null = leer */
   plantProgress: number | null;
+  /** Growbox: geerntete Einheiten im Zwischenlager (füllt der Gärtner, leert der Kurier) */
+  harvestStore: number;
   /** Trockenraum: Fortschritt 0..1 je trocknender Einheit */
   drying: number[];
   /** Trockenraum: fertig getrocknete Einheiten (Ausgabe) */
@@ -78,6 +94,46 @@ export interface SavedBuilding {
   packProgress: number | null;
   /** Packtisch: fertige Baggies (Ausgabe) */
   baggies: number;
+}
+
+/** Persistierter Teil eines Arbeiters (Laufzeit-Zustand wie Pfade wird neu aufgebaut). */
+export interface SavedWorker {
+  id: string;
+  kind: WorkerKind;
+  owner: string;
+  x: number;
+  y: number;
+  dir: Direction;
+  buildingId: string;
+  targetBuildingId: string | null;
+  district: number | null;
+  carrying: number;
+  paused: boolean;
+}
+
+/** Ledger im Save: laufende Periode + abgeschlossene Historie. */
+export interface SavedLedger {
+  elapsedS: number;
+  current: LedgerPeriod;
+  history: LedgerPeriod[];
+}
+
+interface Worker extends SavedWorker {
+  moving: boolean;
+  path: Vec2[] | null;
+  /** Dealer: Zeit im aktuellen Verkaufsgespräch (läuft mit TIME_SCALE) */
+  sellT: number;
+  /** Cooldown bis zur nächsten Pfadsuche in Sekunden (drosselt A*) */
+  repathT: number;
+  /** Dealer: anvisierter Passant */
+  targetNpcId: string | null;
+}
+
+/** Was ein Kurier zwischen zwei Gebäudetypen transportiert (null = ungültige Route). */
+function transportGood(from: BuildingKind, to: BuildingKind): "harvest" | "dried" | null {
+  if (from === "growbox" && to === "trockenraum") return "harvest";
+  if (from === "trockenraum" && to === "packtisch") return "dried";
+  return null;
 }
 
 export interface GamePlayer {
@@ -116,18 +172,31 @@ export class Game {
   readonly map: CityMap;
   readonly players = new Map<string, GamePlayer>();
   readonly buildings = new Map<string, SavedBuilding>();
+  readonly workers = new Map<string, Worker>();
   private readonly npcs = new Map<string, Npc>();
   private readonly priceFactors: number[];
   private nextId = 1;
   private nextBuildingId = 1;
+  private nextWorkerId = 1;
   private timer: NodeJS.Timeout | null = null;
   /** Zuletzt bekannte Zustände nicht verbundener Spieler, Schlüssel = Name (kleingeschrieben) */
   private readonly offline = new Map<string, SavedPlayer>();
   private tickTimes: number[] = [];
-  /** Dev-Zeitraffer (TIME_SCALE): beschleunigt nur Produktion und NPC-Cooldowns. */
+  /** Dev-Zeitraffer (TIME_SCALE): beschleunigt Produktion, NPC-Cooldowns und Ledger-Perioden. */
   private readonly timeScale: number;
+  /** Team-weite Buchhaltung: laufende Periode + abgeschlossene Historie. */
+  private ledger: LedgerPeriod;
+  private ledgerElapsedS: number;
+  private ledgerHistoryArr: LedgerPeriod[];
 
-  constructor(seed: number, savedPlayers: SavedPlayer[] = [], savedBuildings: SavedBuilding[] = [], timeScale = 1) {
+  constructor(
+    seed: number,
+    savedPlayers: SavedPlayer[] = [],
+    savedBuildings: SavedBuilding[] = [],
+    savedWorkers: SavedWorker[] = [],
+    savedLedger: SavedLedger | null = null,
+    timeScale = 1,
+  ) {
     this.seed = seed;
     this.map = generateCity(seed);
     this.priceFactors = districtPriceFactors(seed);
@@ -139,6 +208,17 @@ export class Game {
       const num = Number(b.id.replace(/^b/, ""));
       if (Number.isFinite(num) && num >= this.nextBuildingId) this.nextBuildingId = num + 1;
     }
+    for (const w of savedWorkers) {
+      // Defensiv: Arbeiter ohne existierendes Gebäude nicht wiederbeleben.
+      if (!this.buildings.has(w.buildingId)) continue;
+      if (w.targetBuildingId !== null && !this.buildings.has(w.targetBuildingId)) continue;
+      this.workers.set(w.id, { ...w, moving: false, path: null, sellT: 0, repathT: 0, targetNpcId: null });
+      const num = Number(w.id.replace(/^w/, ""));
+      if (Number.isFinite(num) && num >= this.nextWorkerId) this.nextWorkerId = num + 1;
+    }
+    this.ledger = savedLedger ? { ...savedLedger.current } : emptyLedgerPeriod(1);
+    this.ledgerElapsedS = savedLedger ? savedLedger.elapsedS : 0;
+    this.ledgerHistoryArr = savedLedger ? savedLedger.history.map((p) => ({ ...p })) : [];
     this.spawnNpcs();
   }
 
@@ -240,6 +320,12 @@ export class Game {
       case "sell":
         this.handleSell(player, msg.npcId);
         break;
+      case "hire":
+        this.handleHire(player, msg.kind, msg.buildingId, msg.targetBuildingId ?? null, msg.district ?? null);
+        break;
+      case "fire":
+        this.handleFire(player, msg.workerId);
+        break;
       case "join":
         break;
     }
@@ -279,7 +365,12 @@ export class Game {
       const base = { id: b.id, x: b.x, y: b.y, owner: b.owner };
       switch (b.kind) {
         case "growbox":
-          return { ...base, kind: "growbox" as const, plant: b.plantProgress === null ? null : pct(b.plantProgress) };
+          return {
+            ...base,
+            kind: "growbox" as const,
+            plant: b.plantProgress === null ? null : pct(b.plantProgress),
+            store: b.harvestStore,
+          };
         case "trockenraum":
           return { ...base, kind: "trockenraum" as const, drying: b.drying.map(pct), dried: b.dried };
         case "packtisch":
@@ -311,6 +402,53 @@ export class Game {
       drying: b.drying.map(round),
       packProgress: b.packProgress === null ? null : round(b.packProgress),
     }));
+  }
+
+  savedWorkers(): SavedWorker[] {
+    const round = (v: number) => Math.round(v * 100) / 100;
+    return [...this.workers.values()].map((w) => ({
+      id: w.id,
+      kind: w.kind,
+      owner: w.owner,
+      x: round(w.x),
+      y: round(w.y),
+      dir: w.dir,
+      buildingId: w.buildingId,
+      targetBuildingId: w.targetBuildingId,
+      district: w.district,
+      carrying: w.carrying,
+      paused: w.paused,
+    }));
+  }
+
+  savedLedger(): SavedLedger {
+    return {
+      elapsedS: Math.round(this.ledgerElapsedS * 10) / 10,
+      current: { ...this.ledger },
+      history: this.ledgerHistoryArr.map((p) => ({ ...p })),
+    };
+  }
+
+  workerSnapshot(): WorkerSnapshot[] {
+    const round = (v: number) => Math.round(v * 100) / 100;
+    return [...this.workers.values()].map((w) => ({
+      id: w.id,
+      kind: w.kind,
+      owner: w.owner,
+      x: round(w.x),
+      y: round(w.y),
+      dir: w.dir,
+      moving: w.moving,
+      paused: w.paused,
+      carrying: w.carrying,
+      buildingId: w.buildingId,
+      targetBuildingId: w.targetBuildingId,
+      district: w.district,
+    }));
+  }
+
+  ledgerHistory(): LedgerPeriod[] {
+    return this.ledgerHistoryArr.map((p) => ({ ...p }));
   }
 
   /** Gemessene Tickrate über die letzten Sekunden (Soll: TICK_RATE). */
@@ -349,11 +487,15 @@ export class Game {
     for (const n of this.npcs.values()) {
       if (inFootprint(n.x, n.y, PLAYER_RADIUS)) return this.fail(player, "Da steht jemand im Weg.");
     }
+    for (const w of this.workers.values()) {
+      if (inFootprint(w.x, w.y, PLAYER_RADIUS)) return this.fail(player, "Da steht jemand im Weg.");
+    }
     if (player.moneyClean + player.moneyDirty < spec.cost) {
       return this.fail(player, `Zu wenig Geld (${spec.cost} € nötig).`);
     }
 
     this.spend(player, spec.cost);
+    this.ledger.buildCost += spec.cost;
     const building: SavedBuilding = {
       id: `b${this.nextBuildingId++}`,
       kind,
@@ -361,6 +503,7 @@ export class Game {
       y,
       owner: player.name,
       plantProgress: null,
+      harvestStore: 0,
       drying: [],
       dried: 0,
       packQueue: 0,
@@ -375,6 +518,7 @@ export class Game {
       path !== null && path.some((wp) => wp.x >= x && wp.x < x + spec.w && wp.y >= y && wp.y < y + spec.h);
     for (const p of this.players.values()) if (crosses(p.path)) p.path = null;
     for (const n of this.npcs.values()) if (crosses(n.path)) n.path = null;
+    for (const w of this.workers.values()) if (crosses(w.path)) w.path = null;
   }
 
   private blockFootprint(b: SavedBuilding): void {
@@ -396,6 +540,7 @@ export class Game {
       return this.fail(player, `Zu wenig Geld (${cost} € nötig).`);
     }
     this.spend(player, cost);
+    this.ledger.seedCost += cost;
     player.inv.seeds += count;
   }
 
@@ -422,6 +567,7 @@ export class Game {
         if (b.plantProgress < 1) return this.fail(player, "Die Pflanze ist noch nicht reif.");
         b.plantProgress = null;
         player.inv.harvest += HARVEST_YIELD;
+        this.ledger.harvested += HARVEST_YIELD;
         return;
       }
       case "store": {
@@ -445,6 +591,12 @@ export class Game {
         return;
       }
       case "collect": {
+        if (b.kind === "growbox") {
+          if (b.harvestStore < 1) return this.fail(player, "Das Ernte-Lager ist leer.");
+          player.inv.harvest += b.harvestStore;
+          b.harvestStore = 0;
+          return;
+        }
         if (b.kind === "trockenraum") {
           if (b.dried < 1) return this.fail(player, "Noch nichts fertig getrocknet.");
           player.inv.dried += b.dried;
@@ -475,7 +627,124 @@ export class Game {
     player.inv.baggies--;
     player.moneyDirty += price;
     npc.cooldownS = NPC_BUY_COOLDOWN_S;
+    this.ledger.income += price;
+    this.ledger.sales++;
     player.send({ t: "sold", price });
+  }
+
+  // ── M3: Arbeiter anheuern/entlassen ────────────────────────────────────────
+
+  private handleHire(
+    player: GamePlayer,
+    kind: WorkerKind,
+    buildingId: string,
+    targetBuildingId: string | null,
+    district: number | null,
+  ): void {
+    const b = this.usableBuilding(player, buildingId);
+    if (typeof b === "string") return this.fail(player, b);
+    const spec = WORKER_SPECS[kind];
+
+    let target: SavedBuilding | null = null;
+    switch (kind) {
+      case "gaertner": {
+        if (b.kind !== "growbox") return this.fail(player, "Ein Gärtner arbeitet nur an einer Growbox.");
+        for (const w of this.workers.values()) {
+          if (w.kind === "gaertner" && w.buildingId === b.id) {
+            return this.fail(player, "Hier arbeitet schon ein Gärtner.");
+          }
+        }
+        break;
+      }
+      case "kurier": {
+        if (targetBuildingId === null) return this.fail(player, "Kein Zielgebäude gewählt.");
+        target = this.buildings.get(targetBuildingId) ?? null;
+        if (!target) return this.fail(player, "Zielgebäude nicht gefunden.");
+        if (target.owner.toLowerCase() !== player.name.toLowerCase()) {
+          return this.fail(player, `Das Zielgebäude gehört ${target.owner}.`);
+        }
+        if (transportGood(b.kind, target.kind) === null) {
+          return this.fail(player, "Ungültige Route — Kuriere fahren Growbox→Trockenraum oder Trockenraum→Packtisch.");
+        }
+        break;
+      }
+      case "dealer": {
+        if (b.kind !== "packtisch") return this.fail(player, "Ein Dealer holt seine Baggies am Packtisch.");
+        if (district === null) return this.fail(player, "Kein Distrikt gewählt.");
+        break;
+      }
+    }
+
+    // Erster Lohn wird sofort fällig — verhindert Anheuern ohne Geld.
+    if (!this.chargeOwner(player.name, spec.wage)) {
+      return this.fail(player, `Zu wenig Geld (erster Lohn: ${spec.wage} €).`);
+    }
+    this.ledger.wageCost += spec.wage;
+
+    const spawn = findNearestWalkable(this.map, b.x, b.y);
+    const worker: Worker = {
+      id: `w${this.nextWorkerId++}`,
+      kind,
+      owner: player.name,
+      x: spawn.x + 0.5,
+      y: spawn.y + 0.5,
+      dir: "down",
+      buildingId: b.id,
+      targetBuildingId: kind === "kurier" ? (target?.id ?? null) : null,
+      district: kind === "dealer" ? district : null,
+      carrying: 0,
+      paused: false,
+      moving: false,
+      path: null,
+      sellT: 0,
+      repathT: 0,
+      targetNpcId: null,
+    };
+    this.workers.set(worker.id, worker);
+  }
+
+  private handleFire(player: GamePlayer, workerId: string): void {
+    const w = this.workers.get(workerId);
+    if (!w) return this.fail(player, "Arbeiter nicht gefunden.");
+    if (w.owner.toLowerCase() !== player.name.toLowerCase()) {
+      return this.fail(player, `Dieser Arbeiter arbeitet für ${w.owner}.`);
+    }
+    // Getragene Ware verfällt — bewusst simpel gehalten.
+    this.workers.delete(workerId);
+  }
+
+  /** Lohn/Samen vom Konto des Besitzers abbuchen — auch wenn er offline ist. */
+  private chargeOwner(name: string, amount: number): boolean {
+    const online = this.playerByName(name);
+    if (online) {
+      if (online.moneyClean + online.moneyDirty < amount) return false;
+      this.spend(online, amount);
+      return true;
+    }
+    const off = this.offline.get(name.toLowerCase());
+    if (!off || off.moneyClean + off.moneyDirty < amount) return false;
+    const fromDirty = Math.min(off.moneyDirty, amount);
+    off.moneyDirty -= fromDirty;
+    off.moneyClean -= amount - fromDirty;
+    return true;
+  }
+
+  /** Verkaufserlös eines Dealers dem Besitzer gutschreiben (immer schmutzig). */
+  private creditOwnerDirty(name: string, amount: number): void {
+    const online = this.playerByName(name);
+    if (online) {
+      online.moneyDirty += amount;
+      return;
+    }
+    const off = this.offline.get(name.toLowerCase());
+    if (off) off.moneyDirty += amount;
+  }
+
+  private playerByName(name: string): GamePlayer | null {
+    for (const p of this.players.values()) {
+      if (p.name.toLowerCase() === name.toLowerCase()) return p;
+    }
+    return null;
   }
 
   /** Gebäude für eine Aktion holen; String = Ablehnungsgrund. */
@@ -518,13 +787,49 @@ export class Game {
     for (const p of this.players.values()) this.movePlayer(p, dt);
     for (const n of this.npcs.values()) this.tickNpc(n, dt, prodDt);
     for (const b of this.buildings.values()) this.tickBuilding(b, prodDt);
+    for (const w of this.workers.values()) this.tickWorker(w, dt, prodDt);
+    this.tickLedger(prodDt);
     if (this.players.size > 0) {
       this.broadcast({
         t: "snapshot",
         players: this.snapshot(),
         npcs: this.npcSnapshot(),
         buildings: this.buildingSnapshot(),
+        workers: this.workerSnapshot(),
+        ledger: { ...this.ledger, elapsedS: Math.round(this.ledgerElapsedS * 10) / 10 },
       });
+    }
+  }
+
+  // ── Ledger-Perioden & Löhne ────────────────────────────────────────────────
+
+  private tickLedger(prodDt: number): void {
+    this.ledgerElapsedS += prodDt;
+    if (this.ledgerElapsedS < LEDGER_PERIOD_S) return;
+    this.ledgerElapsedS -= LEDGER_PERIOD_S;
+    this.ledgerHistoryArr.push(this.ledger);
+    if (this.ledgerHistoryArr.length > LEDGER_HISTORY_MAX) this.ledgerHistoryArr.shift();
+    this.ledger = emptyLedgerPeriod(this.ledger.n + 1);
+    this.chargeWages();
+    this.broadcast({ t: "ledgerHistory", history: this.ledgerHistory() });
+  }
+
+  /**
+   * Löhne zu Periodenbeginn (Vorkasse), schmutziges Geld zuerst — wie spend().
+   * Reicht das Geld des Besitzers nicht, pausiert der Arbeiter bis zu einem
+   * Periodenbeginn, an dem der Lohn wieder gezahlt werden kann.
+   */
+  private chargeWages(): void {
+    for (const w of this.workers.values()) {
+      const wage = WORKER_SPECS[w.kind].wage;
+      if (this.chargeOwner(w.owner, wage)) {
+        w.paused = false;
+        this.ledger.wageCost += wage;
+      } else {
+        w.paused = true;
+        w.path = null;
+        w.moving = false;
+      }
     }
   }
 
@@ -542,6 +847,7 @@ export class Game {
           if (finished > 0) {
             b.dried += finished;
             b.drying = b.drying.filter((p) => p < 1);
+            this.ledger.dried += finished;
           }
         }
         break;
@@ -555,6 +861,7 @@ export class Game {
           if (b.packProgress >= 1) {
             b.baggies += BAGGIES_PER_DRIED;
             b.packProgress = null;
+            this.ledger.packed += BAGGIES_PER_DRIED;
           }
         }
         break;
@@ -611,6 +918,224 @@ export class Game {
       }
     }
     n.waitTicks = 10 + Math.floor(Math.random() * 30);
+  }
+
+  // ── Arbeiter-Simulation ────────────────────────────────────────────────────
+
+  private tickWorker(w: Worker, dt: number, prodDt: number): void {
+    if (w.paused) {
+      w.moving = false;
+      return;
+    }
+    switch (w.kind) {
+      case "gaertner":
+        this.tickGaertner(w);
+        break;
+      case "kurier":
+        this.tickKurier(w, dt);
+        break;
+      case "dealer":
+        this.tickDealer(w, dt, prodDt);
+        break;
+    }
+  }
+
+  /** Gärtner steht an seiner Growbox: erntet Reifes ins Lager, pflanzt nach (kauft Samen vom Besitzer-Konto). */
+  private tickGaertner(w: Worker): void {
+    w.moving = false;
+    const b = this.buildings.get(w.buildingId);
+    if (!b || b.kind !== "growbox") return;
+    if (b.plantProgress !== null && b.plantProgress >= 1) {
+      if (b.harvestStore + HARVEST_YIELD <= GROWBOX_STORE_MAX) {
+        b.plantProgress = null;
+        b.harvestStore += HARVEST_YIELD;
+        this.ledger.harvested += HARVEST_YIELD;
+      }
+      return;
+    }
+    if (b.plantProgress === null && this.chargeOwner(w.owner, SEED_PRICE)) {
+      b.plantProgress = 0;
+      this.ledger.seedCost += SEED_PRICE;
+    }
+  }
+
+  /** Kurier pendelt zwischen Quelle und Ziel; nimmt, was da ist (max. KURIER_CAPACITY). */
+  private tickKurier(w: Worker, dt: number): void {
+    const from = this.buildings.get(w.buildingId);
+    const to = w.targetBuildingId === null ? undefined : this.buildings.get(w.targetBuildingId);
+    if (!from || !to) {
+      w.moving = false;
+      return;
+    }
+    const good = transportGood(from.kind, to.kind);
+    if (!good) {
+      w.moving = false;
+      return;
+    }
+
+    const dest = w.carrying > 0 ? to : from;
+    if (!this.atBuilding(w.x, w.y, dest)) {
+      this.walkToBuilding(w, dest, dt);
+      return;
+    }
+    w.path = null;
+    w.moving = false;
+
+    if (w.carrying === 0) {
+      const avail = good === "harvest" ? from.harvestStore : from.dried;
+      const take = Math.min(avail, KURIER_CAPACITY);
+      if (take > 0) {
+        if (good === "harvest") from.harvestStore -= take;
+        else from.dried -= take;
+        w.carrying = take;
+      }
+      return;
+    }
+
+    if (to.kind === "trockenraum") {
+      const free = DRY_CAPACITY - to.drying.length - to.dried;
+      const put = Math.min(w.carrying, free);
+      for (let i = 0; i < put; i++) to.drying.push(0);
+      w.carrying -= put;
+    } else if (to.kind === "packtisch") {
+      const free = PACK_QUEUE_MAX - to.packQueue - (to.packProgress === null ? 0 : 1);
+      const put = Math.min(w.carrying, free);
+      to.packQueue += put;
+      w.carrying -= put;
+    }
+    // Ist das Ziel voll, bleibt der Rest getragen — der Kurier wartet hier.
+  }
+
+  /** Dealer: Baggies am Packtisch holen, im zugewiesenen Distrikt kaufbereite Passanten abklappern. */
+  private tickDealer(w: Worker, dt: number, prodDt: number): void {
+    const src = this.buildings.get(w.buildingId);
+    if (!src || src.kind !== "packtisch" || w.district === null) {
+      w.moving = false;
+      return;
+    }
+
+    if (w.carrying === 0) {
+      w.targetNpcId = null;
+      w.sellT = 0;
+      if (!this.atBuilding(w.x, w.y, src)) {
+        this.walkToBuilding(w, src, dt);
+        return;
+      }
+      w.path = null;
+      w.moving = false;
+      const take = Math.min(src.baggies, DEALER_CAPACITY);
+      if (take > 0) {
+        src.baggies -= take;
+        w.carrying = take;
+      }
+      return;
+    }
+
+    // Anvisierten Passanten prüfen (weg, gekauft oder Distrikt verlassen → neu suchen).
+    let npc = w.targetNpcId === null ? undefined : this.npcs.get(w.targetNpcId);
+    if (!npc || npc.cooldownS > 0 || districtIdAt(Math.floor(npc.x), Math.floor(npc.y)) !== w.district) {
+      npc = this.findReadyNpcInDistrict(w);
+      w.targetNpcId = npc ? npc.id : null;
+      w.sellT = 0;
+    }
+
+    if (npc) {
+      if (Math.hypot(npc.x - w.x, npc.y - w.y) <= SELL_RANGE) {
+        w.path = null;
+        w.moving = false;
+        w.sellT += prodDt;
+        if (w.sellT >= DEALER_SELL_TIME_S) {
+          w.sellT = 0;
+          const price = baggiePriceAt(this.priceFactors, Math.floor(npc.x), Math.floor(npc.y));
+          w.carrying--;
+          this.creditOwnerDirty(w.owner, price);
+          npc.cooldownS = NPC_BUY_COOLDOWN_S;
+          this.ledger.income += price;
+          this.ledger.sales++;
+          w.targetNpcId = null;
+        }
+        return;
+      }
+      // Hinterherlaufen — Pfad regelmäßig auffrischen, der Passant bewegt sich.
+      w.sellT = 0;
+      w.repathT -= dt;
+      if (w.path === null || w.repathT <= 0) {
+        w.repathT = 1;
+        const path = findPath(this.map, { x: w.x, y: w.y }, { x: Math.floor(npc.x), y: Math.floor(npc.y) });
+        if (path && path.length > 0) w.path = path;
+      }
+      if (w.path && w.path.length > 0) followPath(w, WORKER_WALK_SPEED, dt);
+      else w.moving = false;
+      return;
+    }
+
+    // Kein kaufbereiter Passant: im Distrikt patrouillieren.
+    if (w.path && w.path.length > 0) {
+      followPath(w, WORKER_WALK_SPEED, dt);
+      return;
+    }
+    w.moving = false;
+    w.repathT -= dt;
+    if (w.repathT > 0) return;
+    w.repathT = 1.5;
+    const spot = this.randomStreetInDistrict(w.district);
+    if (spot) {
+      const path = findPath(this.map, { x: w.x, y: w.y }, spot);
+      if (path && path.length > 0) w.path = path;
+    }
+  }
+
+  private atBuilding(x: number, y: number, b: SavedBuilding): boolean {
+    const spec = BUILDING_SPECS[b.kind];
+    const dx = Math.max(b.x - x, 0, x - (b.x + spec.w));
+    const dy = Math.max(b.y - y, 0, y - (b.y + spec.h));
+    return Math.hypot(dx, dy) <= INTERACT_RANGE;
+  }
+
+  private walkToBuilding(w: Worker, b: SavedBuilding, dt: number): void {
+    if (w.path && w.path.length > 0) {
+      followPath(w, WORKER_WALK_SPEED, dt);
+      return;
+    }
+    w.moving = false;
+    w.repathT -= dt;
+    if (w.repathT > 0) return;
+    const dock = findNearestWalkable(this.map, b.x, b.y);
+    const path = findPath(this.map, { x: w.x, y: w.y }, dock);
+    if (path && path.length > 0) {
+      w.path = path;
+      followPath(w, WORKER_WALK_SPEED, dt);
+    } else {
+      w.repathT = 2;
+    }
+  }
+
+  private findReadyNpcInDistrict(w: Worker): Npc | undefined {
+    let best: Npc | undefined;
+    let bestDist = Infinity;
+    for (const n of this.npcs.values()) {
+      if (n.cooldownS > 0) continue;
+      if (districtIdAt(Math.floor(n.x), Math.floor(n.y)) !== w.district) continue;
+      const d = Math.hypot(n.x - w.x, n.y - w.y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = n;
+      }
+    }
+    return best;
+  }
+
+  private randomStreetInDistrict(district: number): Vec2 | null {
+    const cellW = MAP_WIDTH / DISTRICT_GRID;
+    const cellH = MAP_HEIGHT / DISTRICT_GRID;
+    const gx = district % DISTRICT_GRID;
+    const gy = Math.floor(district / DISTRICT_GRID);
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const x = Math.floor(gx * cellW + Math.random() * cellW);
+      const y = Math.floor(gy * cellH + Math.random() * cellH);
+      if (isStreet(tileAt(this.map, x, y))) return { x, y };
+    }
+    return null;
   }
 
   // ── Bewegung ───────────────────────────────────────────────────────────────

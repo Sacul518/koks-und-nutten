@@ -43,6 +43,7 @@
       </div>
 
       <button id="build-button" type="button">Bauen (B)</button>
+      <button id="ledger-button" type="button">Personal (L)</button>
 
       <div id="toast" hidden></div>
 
@@ -65,7 +66,20 @@
         <button id="panel-close" class="panel-close" type="button">Schließen</button>
       </div>
 
-      <div id="controls-hint">Tippen = laufen/antippen &nbsp;·&nbsp; B = Bauen &nbsp;·&nbsp; WASD läuft &nbsp;·&nbsp; Shift = Sprint &nbsp;·&nbsp; C = zentrieren</div>
+      <div id="controls-hint">Tippen = laufen/antippen &nbsp;·&nbsp; B = Bauen &nbsp;·&nbsp; L = Personal &nbsp;·&nbsp; WASD läuft &nbsp;·&nbsp; Shift = Sprint &nbsp;·&nbsp; C = zentrieren</div>
+    </div>
+
+    <div id="ledger" hidden>
+      <div id="ledger-box">
+        <div class="panel-title">Buchhaltung</div>
+        <div id="ledger-period"></div>
+        <table id="ledger-table"></table>
+        <canvas id="ledger-chart"></canvas>
+        <div id="ledger-chart-info"></div>
+        <div class="panel-title">Personal</div>
+        <div id="ledger-personal"></div>
+        <button id="ledger-close" class="panel-close" type="button">Schließen</button>
+      </div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

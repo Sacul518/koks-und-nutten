@@ -200,6 +200,24 @@ body {
   background: #3a56c4;
 }
 
+#ledger-button {
+  position: absolute;
+  right: 0.75rem;
+  bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 58px);
+  pointer-events: auto;
+  min-height: 48px;
+  padding: 0.6rem 1.2rem;
+  font-size: 1.05rem;
+  border: 1px solid #3a3d4a;
+  border-radius: 0.6rem;
+  background: #2a2d38;
+  color: #e8e8ee;
+}
+
+#ledger-button:active {
+  background: #20222b;
+}
+
 #toast {
   position: absolute;
   top: max(3.5rem, calc(env(safe-area-inset-top) + 2.75rem));
@@ -279,6 +297,31 @@ body {
   font-weight: 400;
 }
 
+/* ── M3: Personal anheuern (Dealer-Distriktwahl im Gebäude-Panel) ── */
+
+.district-caption {
+  font-size: 0.85rem;
+  color: #c8c8d4;
+}
+
+.district-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem;
+}
+
+.district-btn {
+  min-height: 44px;
+  padding: 0.3rem;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.district-home {
+  outline: 2px solid #7ee08a;
+  outline-offset: -2px;
+}
+
 .panel-close {
   margin-top: 0.6rem;
   width: 100%;
@@ -338,4 +381,149 @@ body {
 /* Panels/Buttons sind interaktiv, der Rest des HUD lässt Taps durch */
 #hud[hidden] {
   display: none;
+}
+
+/* ── M3: Buchhaltung (Ledger, Taste L) ── */
+
+#ledger {
+  position: fixed;
+  inset: 0;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 12, 16, 0.92);
+  pointer-events: auto;
+}
+
+/* muss die display:flex-Regel oben schlagen, sonst bleibt der Ledger sichtbar (s. Join-Overlay-Fix) */
+#ledger[hidden] {
+  display: none;
+}
+
+#ledger-box {
+  width: min(34rem, calc(100vw - 1.5rem));
+  max-height: calc(100vh - 3rem);
+  overflow-y: auto;
+  background: rgba(24, 26, 34, 0.97);
+  border: 1px solid #3a3d4a;
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+#ledger-period {
+  font-size: 0.85rem;
+  color: #9a9aa8;
+  margin-bottom: 0.5rem;
+}
+
+#ledger-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+#ledger-table th,
+#ledger-table td {
+  padding: 0.25rem 0.4rem;
+  text-align: right;
+  font-weight: 400;
+}
+
+#ledger-table th:first-child,
+#ledger-table td:first-child {
+  text-align: left;
+  color: #9a9aa8;
+}
+
+#ledger-table tr.ledger-sub td:first-child {
+  padding-left: 1rem;
+  color: #7a7d8a;
+  font-size: 0.8rem;
+}
+
+#ledger-table tr.ledger-income td:not(:first-child) {
+  color: #46a463;
+}
+
+#ledger-table tr.ledger-expense td:not(:first-child) {
+  color: #5f7ff2;
+}
+
+#ledger-table tr.ledger-profit td:not(:first-child) {
+  font-weight: 600;
+}
+
+#ledger-table tr.ledger-profit.ledger-pos td:not(:first-child) {
+  color: #46a463;
+}
+
+#ledger-table tr.ledger-profit.ledger-neg td:not(:first-child) {
+  color: #ff7a7a;
+}
+
+#ledger-chart {
+  display: block;
+  width: 100%;
+  height: 160px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 0.4rem;
+}
+
+#ledger-chart-info {
+  min-height: 1.2rem;
+  font-size: 0.8rem;
+  color: #9a9aa8;
+  margin: 0.4rem 0 0.75rem;
+}
+
+#ledger-personal {
+  display: flex;
+  flex-direction: column;
+}
+
+.personal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #2a2d38;
+}
+
+.personal-info {
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.personal-status {
+  color: #9a9aa8;
+  font-size: 0.78rem;
+}
+
+.personal-row.personal-paused .personal-status {
+  color: #f0b060;
+}
+
+.personal-fire {
+  min-height: 40px;
+  padding: 0.4rem 0.8rem;
+  border: none;
+  border-radius: 0.4rem;
+  background: #5a2020;
+  color: #ffb3b3;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.personal-fire:disabled {
+  background: #2a2d38;
+  color: #70737f;
+}
+
+.ledger-empty {
+  color: #9a9aa8;
+  font-size: 0.9rem;
+  padding: 0.5rem 0;
 }

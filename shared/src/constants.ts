@@ -1,6 +1,6 @@
-import type { BuildingKind } from "./types.ts";
+import type { BuildingKind, WorkerKind } from "./types.ts";
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 export const TICK_RATE = 10;
 export const TICK_MS = 1000 / TICK_RATE;
@@ -65,14 +65,44 @@ export const INTERACT_RANGE = 2.5;
 /** Maximale Distanz (Tiles) zwischen Spieler und Passant für Verkäufe. */
 export const SELL_RANGE = 2.5;
 
-/** Anzahl Passanten-NPCs in der Stadt. */
-export const NPC_COUNT = 24;
+/** Anzahl Passanten-NPCs in der Stadt (M3: 24 → 32, damit Dealer genug Kundschaft finden). */
+export const NPC_COUNT = 32;
 export const NPC_WALK_SPEED = 1.6;
-/** Wartezeit eines Passanten nach einem Kauf, bis er wieder kauft (Sekunden). */
-export const NPC_BUY_COOLDOWN_S = 45;
+/** Wartezeit eines Passanten nach einem Kauf, bis er wieder kauft (M3: 45 → 30 s). */
+export const NPC_BUY_COOLDOWN_S = 30;
 
 /** Distrikt-Raster: DISTRICT_GRID × DISTRICT_GRID Zellen über der Karte. */
 export const DISTRICT_GRID = 4;
 /** Spanne der Distrikt-Preisfaktoren (deterministisch aus dem Seed). */
 export const DISTRICT_PRICE_MIN = 0.7;
 export const DISTRICT_PRICE_MAX = 1.4;
+
+// ── M3: Arbeiter & Ledger (Balancing) ───────────────────────────────────────
+
+export interface WorkerSpec {
+  name: string;
+  /** Lohn in € pro Ledger-Periode; wird zu Periodenbeginn abgezogen. */
+  wage: number;
+}
+
+export const WORKER_SPECS: Record<WorkerKind, WorkerSpec> = {
+  gaertner: { name: "Gärtner", wage: 10 },
+  kurier: { name: "Kurier", wage: 6 },
+  dealer: { name: "Dealer", wage: 12 },
+};
+
+/** Länge einer Ledger-/Lohn-Periode in Sekunden (TIME_SCALE beschleunigt sie mit). */
+export const LEDGER_PERIOD_S = 60;
+/** So viele abgeschlossene Perioden behalten Save und Graph. */
+export const LEDGER_HISTORY_MAX = 60;
+
+/** Laufgeschwindigkeit der Arbeiter (Tiles/s) — zwischen Passant (1,6) und Spieler (4,5). */
+export const WORKER_WALK_SPEED = 3.5;
+/** Traglast des Kuriers je Fahrt (Einheiten). */
+export const KURIER_CAPACITY = 6;
+/** Baggies, die ein Dealer maximal einsteckt. */
+export const DEALER_CAPACITY = 10;
+/** Zeit pro Dealer-Verkauf in Sekunden (läuft mit TIME_SCALE). */
+export const DEALER_SELL_TIME_S = 6;
+/** Ernte-Zwischenlager der Growbox — ist es voll, wartet der Gärtner mit dem Ernten. */
+export const GROWBOX_STORE_MAX = 12;

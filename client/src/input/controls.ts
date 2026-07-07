@@ -7,6 +7,8 @@ export interface ControlCallbacks {
   onRecenter: () => void;
   /** Taste B: Baumenü öffnen/schließen */
   onBuildToggle: () => void;
+  /** Taste L: Buchhaltung (Ledger) öffnen/schließen */
+  onLedgerToggle: () => void;
   /** Escape: Baumodus/Panel schließen */
   onEscape: () => void;
 }
@@ -121,6 +123,10 @@ export function attachControls(target: HTMLElement, cb: ControlCallbacks): void 
     }
     if (key === "b") {
       cb.onBuildToggle();
+      return;
+    }
+    if (key === "l") {
+      cb.onLedgerToggle();
       return;
     }
     if (key === "escape") {

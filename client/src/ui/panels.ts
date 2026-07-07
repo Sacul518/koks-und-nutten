@@ -1,5 +1,6 @@
 import {
   BAGGIES_PER_DRIED,
+  DISTRICT_GRID,
   DRY_CAPACITY,
   DRY_TIME_S,
   GROW_TIME_S,
@@ -7,12 +8,14 @@ import {
   PACK_QUEUE_MAX,
   PACK_TIME_S,
   SEED_PRICE,
+  WORKER_SPECS,
   baggiePriceAt,
   districtIdAt,
   type BuildingSnapshot,
   type ClientMessage,
   type NpcSnapshot,
   type PlayerSnapshot,
+  type WorkerSnapshot,
 } from "@koks/shared";
 
 type OpenTarget = { type: "building"; id: string } | { type: "npc"; id: string } | null;
@@ -23,13 +26,16 @@ interface ActionButton {
   refresh: (b: BuildingSnapshot | NpcSnapshot, me: PlayerSnapshot) => boolean;
 }
 
+const money = (p: PlayerSnapshot) => p.money.clean + p.money.dirty;
+
 /**
- * Bottom-Sheet für Gebäude (Produktions-Aktionen) und Passanten (Verkauf).
+ * Bottom-Sheet für Gebäude (Produktion + Personal) und Passanten (Verkauf).
  * Wird bei jedem Snapshot mit den Live-Zahlen aktualisiert.
  */
 export class Panels {
   private open: OpenTarget = null;
   private buttons: ActionButton[] = [];
+  private workers: WorkerSnapshot[] = [];
   private readonly panel = document.getElementById("panel")!;
   private readonly titleEl = document.getElementById("panel-title")!;
   private readonly bodyEl = document.getElementById("panel-body")!;
@@ -48,9 +54,10 @@ export class Panels {
     return this.open !== null;
   }
 
-  openBuilding(b: BuildingSnapshot, me: PlayerSnapshot): void {
+  openBuilding(b: BuildingSnapshot, me: PlayerSnapshot, buildings: BuildingSnapshot[], workers: WorkerSnapshot[]): void {
     this.open = { type: "building", id: b.id };
     this.buttons = [];
+    this.workers = workers;
     this.actionsEl.replaceChildren();
 
     const mine = b.owner.toLowerCase() === me.name.toLowerCase();
@@ -58,12 +65,12 @@ export class Panels {
       switch (b.kind) {
         case "growbox":
           this.addButton(`1 Samen kaufen (${SEED_PRICE} €)`, { t: "buySeeds", buildingId: b.id, count: 1 }, (_, p) =>
-            p.money.clean + p.money.dirty >= SEED_PRICE,
+            money(p) >= SEED_PRICE,
           );
           this.addButton(
             `5 Samen kaufen (${5 * SEED_PRICE} €)`,
             { t: "buySeeds", buildingId: b.id, count: 5 },
-            (_, p) => p.money.clean + p.money.dirty >= 5 * SEED_PRICE,
+            (_, p) => money(p) >= 5 * SEED_PRICE,
           );
           this.addButton("Pflanzen (1 Samen)", { t: "plant", buildingId: b.id }, (eb, p) =>
             "kind" in eb && eb.kind === "growbox" && eb.plant === null && p.inv.seeds > 0,
@@ -71,6 +78,11 @@ export class Panels {
           this.addButton(`Ernten (+${HARVEST_YIELD} Ernte)`, { t: "harvest", buildingId: b.id }, (eb) =>
             "kind" in eb && eb.kind === "growbox" && eb.plant !== null && eb.plant >= 1,
           );
+          this.addButton("Ernte-Lager entnehmen", { t: "collect", buildingId: b.id }, (eb) =>
+            "kind" in eb && eb.kind === "growbox" && eb.store > 0,
+          );
+          this.addHireGardener(b);
+          this.addHireCouriers(b, buildings, "trockenraum");
           break;
         case "trockenraum":
           this.addButton("Ernte aufhängen", { t: "store", buildingId: b.id }, (eb, p) =>
@@ -79,6 +91,7 @@ export class Panels {
           this.addButton("Getrocknetes entnehmen", { t: "collect", buildingId: b.id }, (eb) =>
             "kind" in eb && eb.kind === "trockenraum" && eb.dried > 0,
           );
+          this.addHireCouriers(b, buildings, "packtisch");
           break;
         case "packtisch":
           this.addButton("Weed verpacken", { t: "pack", buildingId: b.id }, (eb, p) =>
@@ -90,6 +103,7 @@ export class Panels {
           this.addButton("Baggies entnehmen", { t: "collect", buildingId: b.id }, (eb) =>
             "kind" in eb && eb.kind === "packtisch" && eb.baggies > 0,
           );
+          this.addHireDealer(b);
           break;
       }
     }
@@ -113,7 +127,13 @@ export class Panels {
   }
 
   /** Bei jedem Snapshot: offenes Panel mit frischen Zahlen füllen (oder schließen, wenn weg). */
-  refresh(buildings: BuildingSnapshot[], npcs: NpcSnapshot[], me: PlayerSnapshot | undefined): void {
+  refresh(
+    buildings: BuildingSnapshot[],
+    npcs: NpcSnapshot[],
+    workers: WorkerSnapshot[],
+    me: PlayerSnapshot | undefined,
+  ): void {
+    this.workers = workers;
     if (!this.open || !me) return;
     if (this.open.type === "building") {
       const b = buildings.find((x) => x.id === this.open!.id);
@@ -136,14 +156,74 @@ export class Panels {
     label: string,
     msg: ClientMessage,
     enabled: (entity: BuildingSnapshot | NpcSnapshot, me: PlayerSnapshot) => boolean,
-  ): void {
+    parent: HTMLElement = this.actionsEl,
+  ): HTMLButtonElement {
     const el = document.createElement("button");
     el.type = "button";
     el.className = "action-btn";
     el.textContent = label;
     el.addEventListener("click", () => this.send(msg));
-    this.actionsEl.appendChild(el);
+    parent.appendChild(el);
     this.buttons.push({ el, refresh: enabled });
+    return el;
+  }
+
+  // ── Personal anheuern ──────────────────────────────────────────────────────
+
+  private hasGardener(buildingId: string): boolean {
+    return this.workers.some((w) => w.kind === "gaertner" && w.buildingId === buildingId);
+  }
+
+  private addHireGardener(b: BuildingSnapshot): void {
+    const wage = WORKER_SPECS.gaertner.wage;
+    this.addButton(
+      `Gärtner anheuern (${wage} €/Periode)`,
+      { t: "hire", kind: "gaertner", buildingId: b.id },
+      (_, p) => !this.hasGardener(b.id) && money(p) >= wage,
+    );
+  }
+
+  /** Kurier-Buttons: ein Button je eigenem Zielgebäude, nach Entfernung sortiert. */
+  private addHireCouriers(b: BuildingSnapshot, buildings: BuildingSnapshot[], targetKind: "trockenraum" | "packtisch"): void {
+    const wage = WORKER_SPECS.kurier.wage;
+    const targets = buildings
+      .filter((t) => t.kind === targetKind && t.owner.toLowerCase() === b.owner.toLowerCase())
+      .map((t) => ({ t, dist: Math.round(Math.hypot(t.x - b.x, t.y - b.y)) }))
+      .sort((a, z) => a.dist - z.dist)
+      .slice(0, 4);
+    const label = targetKind === "trockenraum" ? "Trockenraum" : "Packtisch";
+    for (const { t, dist } of targets) {
+      this.addButton(
+        `Kurier → ${label} ${t.id} · ${dist} Tiles (${wage} €/Periode)`,
+        { t: "hire", kind: "kurier", buildingId: b.id, targetBuildingId: t.id },
+        (_, p) => money(p) >= wage,
+      );
+    }
+  }
+
+  /** Dealer: Distrikt direkt im Panel wählen — 4×4-Raster mit Preisfaktoren. */
+  private addHireDealer(b: BuildingSnapshot): void {
+    const wage = WORKER_SPECS.dealer.wage;
+    const caption = document.createElement("div");
+    caption.className = "district-caption";
+    caption.textContent = `Dealer anheuern (${wage} €/Periode) — Verkaufs-Distrikt wählen:`;
+    this.actionsEl.appendChild(caption);
+
+    const grid = document.createElement("div");
+    grid.className = "district-grid";
+    this.actionsEl.appendChild(grid);
+    const homeDistrict = districtIdAt(b.x, b.y);
+    for (let d = 0; d < DISTRICT_GRID * DISTRICT_GRID; d++) {
+      const factor = this.priceFactors[d]!;
+      const el = this.addButton(
+        `×${factor.toFixed(2)}`,
+        { t: "hire", kind: "dealer", buildingId: b.id, district: d },
+        (_, p) => money(p) >= wage,
+        grid,
+      );
+      el.classList.add("district-btn");
+      if (d === homeDistrict) el.classList.add("district-home");
+    }
   }
 
   private refreshButtons(entity: BuildingSnapshot | NpcSnapshot, me: PlayerSnapshot): void {
@@ -154,7 +234,7 @@ export class Panels {
     const lines: string[] = [];
     switch (b.kind) {
       case "growbox":
-        this.titleEl.textContent = "Growbox";
+        this.titleEl.textContent = `Growbox ${b.id}`;
         lines.push(
           b.plant === null
             ? "Beet: leer"
@@ -162,22 +242,28 @@ export class Panels {
               ? "Pflanze: REIF — ernten!"
               : `Pflanze: ${Math.round(b.plant * 100)} % (${GROW_TIME_S} s Wachstum)`,
         );
+        lines.push(`Ernte-Lager: ${b.store}`);
+        lines.push(`Gärtner: ${this.hasGardener(b.id) ? "angestellt" : "—"}`);
         lines.push(`Samen dabei: ${me.inv.seeds}`);
         break;
       case "trockenraum":
-        this.titleEl.textContent = "Trockenraum";
+        this.titleEl.textContent = `Trockenraum ${b.id}`;
         lines.push(`Trocknet: ${b.drying.length} (je ${DRY_TIME_S} s)`);
         lines.push(`Fertig: ${b.dried}`);
         lines.push(`Frei: ${DRY_CAPACITY - b.drying.length - b.dried}/${DRY_CAPACITY}`);
         lines.push(`Ernte dabei: ${me.inv.harvest}`);
         break;
       case "packtisch":
-        this.titleEl.textContent = "Packtisch";
+        this.titleEl.textContent = `Packtisch ${b.id}`;
         lines.push(`Warteschlange: ${b.queue}`);
         lines.push(b.packing === null ? "In Arbeit: —" : `In Arbeit: ${Math.round(b.packing * 100)} % (${PACK_TIME_S} s)`);
         lines.push(`Fertige Baggies: ${b.baggies} (${BAGGIES_PER_DRIED} je Einheit)`);
         lines.push(`Weed dabei: ${me.inv.dried}`);
         break;
+    }
+    const staff = this.workers.filter((w) => w.buildingId === b.id || w.targetBuildingId === b.id);
+    if (staff.length > 0) {
+      lines.push(`Personal hier: ${staff.map((w) => WORKER_SPECS[w.kind].name).join(", ")}`);
     }
     if (!mine) lines.unshift(`Gehört ${b.owner} — nur der Besitzer kann hier arbeiten.`);
     this.bodyEl.innerHTML = lines.map((l) => `<div>${escapeHtml(l)}</div>`).join("");

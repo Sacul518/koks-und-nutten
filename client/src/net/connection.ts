@@ -1,4 +1,10 @@
-import { PROTOCOL_VERSION, type ClientMessage, type PlayerSnapshot, type ServerMessage } from "@koks/shared";
+import {
+  PROTOCOL_VERSION,
+  type ClientMessage,
+  type LedgerPeriod,
+  type PlayerSnapshot,
+  type ServerMessage,
+} from "@koks/shared";
 
 export interface JoinSuccess {
   id: string;
@@ -13,6 +19,7 @@ export class Connection {
   onDisconnect: (() => void) | null = null;
   onActionError: ((reason: string) => void) | null = null;
   onSold: ((price: number) => void) | null = null;
+  onLedgerHistory: ((history: LedgerPeriod[]) => void) | null = null;
 
   join(name: string): Promise<JoinSuccess> {
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -46,6 +53,9 @@ export class Connection {
             break;
           case "sold":
             this.onSold?.(msg.price);
+            break;
+          case "ledgerHistory":
+            this.onLedgerHistory?.(msg.history);
             break;
         }
       };

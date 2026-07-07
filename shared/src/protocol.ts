@@ -1,9 +1,15 @@
+import { DISTRICT_GRID } from "./constants.ts";
 import {
   isBuildingKind,
+  isWorkerKind,
   type BuildingKind,
   type BuildingSnapshot,
+  type LedgerLive,
+  type LedgerPeriod,
   type NpcSnapshot,
   type PlayerSnapshot,
+  type WorkerKind,
+  type WorkerSnapshot,
 } from "./types.ts";
 
 export type ClientMessage =
@@ -19,13 +25,26 @@ export type ClientMessage =
   | { t: "store"; buildingId: string }
   | { t: "pack"; buildingId: string }
   | { t: "collect"; buildingId: string }
-  | { t: "sell"; npcId: string };
+  | { t: "sell"; npcId: string }
+  // M3: Arbeiter
+  | { t: "hire"; kind: WorkerKind; buildingId: string; targetBuildingId?: string; district?: number }
+  | { t: "fire"; workerId: string };
 
 export type ServerMessage =
   | { t: "welcome"; id: string; seed: number; players: PlayerSnapshot[] }
   | { t: "joinError"; reason: string }
-  | { t: "snapshot"; players: PlayerSnapshot[]; npcs: NpcSnapshot[]; buildings: BuildingSnapshot[] }
+  | {
+      t: "snapshot";
+      players: PlayerSnapshot[];
+      npcs: NpcSnapshot[];
+      buildings: BuildingSnapshot[];
+      workers: WorkerSnapshot[];
+      /** Laufende Ledger-Periode (Team-weit). */
+      ledger: LedgerLive;
+    }
   | { t: "playerLeft"; id: string }
+  /** Abgeschlossene Perioden — beim Join und nach jedem Periodenwechsel. */
+  | { t: "ledgerHistory"; history: LedgerPeriod[] }
   /** Abgelehnte Aktion (nur an den auslösenden Spieler) */
   | { t: "actionError"; reason: string }
   /** Erfolgreicher Baggie-Verkauf (nur an den Verkäufer) */
@@ -87,6 +106,21 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
       return null;
     case "sell":
       if (typeof m.npcId === "string") return { t: "sell", npcId: m.npcId };
+      return null;
+    case "hire": {
+      if (!isWorkerKind(m.kind) || typeof m.buildingId !== "string") return null;
+      const targetBuildingId = typeof m.targetBuildingId === "string" ? m.targetBuildingId : undefined;
+      const district =
+        typeof m.district === "number" &&
+        Number.isInteger(m.district) &&
+        m.district >= 0 &&
+        m.district < DISTRICT_GRID * DISTRICT_GRID
+          ? m.district
+          : undefined;
+      return { t: "hire", kind: m.kind, buildingId: m.buildingId, targetBuildingId, district };
+    }
+    case "fire":
+      if (typeof m.workerId === "string") return { t: "fire", workerId: m.workerId };
       return null;
     default:
       return null;

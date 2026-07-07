@@ -1,10 +1,18 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { START_MONEY_CLEAN, START_MONEY_DIRTY, isBuildingKind, type Inventory } from "@koks/shared";
-import type { SavedBuilding, SavedPlayer } from "../game/Game.ts";
+import {
+  START_MONEY_CLEAN,
+  START_MONEY_DIRTY,
+  emptyLedgerPeriod,
+  isBuildingKind,
+  isWorkerKind,
+  type Inventory,
+  type LedgerPeriod,
+} from "@koks/shared";
+import type { SavedBuilding, SavedLedger, SavedPlayer, SavedWorker } from "../game/Game.ts";
 
 /** Bei Format-Änderungen hochzählen und in migrate() einen Schritt ergänzen. */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export const AUTOSAVE_INTERVAL_MS = 5 * 60_000;
 
@@ -17,6 +25,8 @@ export interface SaveGame {
   seed: number;
   players: SavedPlayer[];
   buildings: SavedBuilding[];
+  workers: SavedWorker[];
+  ledger: SavedLedger;
 }
 
 /**
@@ -83,6 +93,10 @@ export class SaveManager {
   }
 }
 
+function emptyLedger(): SavedLedger {
+  return { elapsedS: 0, current: emptyLedgerPeriod(1), history: [] };
+}
+
 function validateSave(data: unknown): SaveGame {
   if (typeof data !== "object" || data === null) throw new Error("kein Objekt");
   let d = data as Record<string, unknown>;
@@ -95,12 +109,16 @@ function validateSave(data: unknown): SaveGame {
   if (typeof d.savedAt !== "string") throw new Error("savedAt fehlt");
   const players = Array.isArray(d.players) ? d.players.filter(isSavedPlayer) : [];
   const buildings = Array.isArray(d.buildings) ? d.buildings.filter(isSavedBuilding) : [];
+  const workers = Array.isArray(d.workers) ? d.workers.filter(isSavedWorker) : [];
+  const ledger = isSavedLedger(d.ledger) ? d.ledger : emptyLedger();
   return {
     saveVersion: SAVE_VERSION,
     savedAt: d.savedAt,
     seed: d.seed,
     players,
     buildings,
+    workers,
+    ledger,
   };
 }
 
@@ -118,6 +136,16 @@ function migrate(d: Record<string, unknown>): Record<string, unknown> {
     d.buildings = [];
     d.saveVersion = 2;
   }
+  if (d.saveVersion === 2) {
+    // v2 → v3: Growboxen bekommen ein Ernte-Lager, keine Arbeiter, leeres Ledger.
+    d.buildings = (Array.isArray(d.buildings) ? d.buildings : []).map((b) => ({
+      harvestStore: 0,
+      ...(b as Record<string, unknown>),
+    }));
+    d.workers = [];
+    d.ledger = emptyLedger();
+    d.saveVersion = 3;
+  }
   console.log(`[save] Spielstand von v${String(from)} auf v${String(d.saveVersion)} migriert`);
   return d;
 }
@@ -130,11 +158,15 @@ function isSavedPlayer(p: unknown): p is SavedPlayer {
     typeof d.x === "number" &&
     typeof d.y === "number" &&
     typeof d.avatar === "number" &&
-    (d.dir === "up" || d.dir === "down" || d.dir === "left" || d.dir === "right") &&
+    isDirection(d.dir) &&
     typeof d.moneyClean === "number" &&
     typeof d.moneyDirty === "number" &&
     isInventory(d.inv)
   );
+}
+
+function isDirection(v: unknown): boolean {
+  return v === "up" || v === "down" || v === "left" || v === "right";
 }
 
 function isInventory(inv: unknown): inv is Inventory {
@@ -158,11 +190,49 @@ function isSavedBuilding(b: unknown): b is SavedBuilding {
     typeof d.y === "number" &&
     typeof d.owner === "string" &&
     (d.plantProgress === null || typeof d.plantProgress === "number") &&
+    typeof d.harvestStore === "number" &&
     Array.isArray(d.drying) &&
     d.drying.every((v) => typeof v === "number") &&
     typeof d.dried === "number" &&
     typeof d.packQueue === "number" &&
     (d.packProgress === null || typeof d.packProgress === "number") &&
     typeof d.baggies === "number"
+  );
+}
+
+function isSavedWorker(w: unknown): w is SavedWorker {
+  if (typeof w !== "object" || w === null) return false;
+  const d = w as Record<string, unknown>;
+  return (
+    typeof d.id === "string" &&
+    isWorkerKind(d.kind) &&
+    typeof d.owner === "string" &&
+    typeof d.x === "number" &&
+    typeof d.y === "number" &&
+    isDirection(d.dir) &&
+    typeof d.buildingId === "string" &&
+    (d.targetBuildingId === null || typeof d.targetBuildingId === "string") &&
+    (d.district === null || typeof d.district === "number") &&
+    typeof d.carrying === "number" &&
+    typeof d.paused === "boolean"
+  );
+}
+
+function isLedgerPeriod(p: unknown): p is LedgerPeriod {
+  if (typeof p !== "object" || p === null) return false;
+  const d = p as Record<string, unknown>;
+  return ["n", "income", "seedCost", "wageCost", "buildCost", "sales", "harvested", "dried", "packed"].every(
+    (k) => typeof d[k] === "number",
+  );
+}
+
+function isSavedLedger(l: unknown): l is SavedLedger {
+  if (typeof l !== "object" || l === null) return false;
+  const d = l as Record<string, unknown>;
+  return (
+    typeof d.elapsedS === "number" &&
+    isLedgerPeriod(d.current) &&
+    Array.isArray(d.history) &&
+    d.history.every(isLedgerPeriod)
   );
 }

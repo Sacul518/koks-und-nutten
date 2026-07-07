@@ -8,6 +8,7 @@ import {
   type BuildingSnapshot,
   type NpcSnapshot,
   type PlayerSnapshot,
+  type WorkerSnapshot,
 } from "@koks/shared";
 import { Connection } from "./net/connection.ts";
 import { loadTextures } from "./render/assets.ts";
@@ -15,11 +16,13 @@ import { buildWorld } from "./render/world.ts";
 import { PlayerLayer } from "./render/players.ts";
 import { NpcLayer } from "./render/npcs.ts";
 import { BuildingLayer } from "./render/buildings.ts";
+import { WorkerLayer } from "./render/workers.ts";
 import { Camera } from "./render/camera.ts";
 import { attachControls } from "./input/controls.ts";
 import { Hud } from "./ui/hud.ts";
 import { Panels } from "./ui/panels.ts";
 import { BuildMode } from "./ui/buildmode.ts";
+import { LedgerScreen } from "./ui/ledger.ts";
 
 const overlay = document.getElementById("join-overlay")!;
 const form = document.getElementById("join-form") as HTMLFormElement;
@@ -75,6 +78,8 @@ async function startGame(name: string): Promise<void> {
   worldRoot.addChild(buildings.container);
   const npcs = new NpcLayer(textures);
   worldRoot.addChild(npcs.container);
+  const workers = new WorkerLayer(textures);
+  worldRoot.addChild(workers.container);
   const players = new PlayerLayer(textures);
   worldRoot.addChild(players.container);
   const ghostLayer = new Container();
@@ -84,11 +89,18 @@ async function startGame(name: string): Promise<void> {
   const camera = new Camera();
   const hud = new Hud();
   const panels = new Panels((msg) => conn.send(msg), priceFactors);
+  const ledger = new LedgerScreen((msg) => conn.send(msg), priceFactors);
 
-  let latest: { players: PlayerSnapshot[]; npcs: NpcSnapshot[]; buildings: BuildingSnapshot[] } = {
+  let latest: {
+    players: PlayerSnapshot[];
+    npcs: NpcSnapshot[];
+    buildings: BuildingSnapshot[];
+    workers: WorkerSnapshot[];
+  } = {
     players: welcome.players,
     npcs: [],
     buildings: [],
+    workers: [],
   };
   const me = (): PlayerSnapshot | undefined => latest.players.find((p) => p.id === welcome.id);
 
@@ -104,25 +116,30 @@ async function startGame(name: string): Promise<void> {
     },
   });
   (document.getElementById("build-button") as HTMLButtonElement).onclick = () => buildMode.toggleMenu();
+  (document.getElementById("ledger-button") as HTMLButtonElement).onclick = () => ledger.toggle();
 
   conn.onSnapshot = (msg) => {
-    latest = { players: msg.players, npcs: msg.npcs, buildings: msg.buildings };
+    latest = { players: msg.players, npcs: msg.npcs, buildings: msg.buildings, workers: msg.workers };
     const now = performance.now();
     players.applySnapshot(msg.players, now);
     npcs.applySnapshot(msg.npcs, now);
     buildings.applySnapshot(msg.buildings);
+    workers.applySnapshot(msg.workers, now);
     const my = me();
     if (my) hud.update(my);
-    panels.refresh(msg.buildings, msg.npcs, my);
+    panels.refresh(msg.buildings, msg.npcs, msg.workers, my);
+    ledger.update({ ledger: msg.ledger, workers: msg.workers, buildings: msg.buildings, me: my });
     buildMode.refresh();
     updatePlayerList(msg.players, welcome.id);
   };
   conn.onActionError = (reason) => hud.toast(reason, "error");
   conn.onSold = (price) => hud.toast(`Verkauft: +${price} € (schmutzig)`, "ok");
+  conn.onLedgerHistory = (history) => ledger.setHistory(history);
   conn.onDisconnect = () => {
     started = false;
     panels.close();
     buildMode.cancel();
+    ledger.close();
     overlay.hidden = false;
     hudRoot.hidden = true;
     errorLine.textContent = "Verbindung zum Server verloren. Bitte neu beitreten.";
@@ -167,7 +184,7 @@ async function startGame(name: string): Promise<void> {
       }
       const b = buildingAt(Math.floor(tx), Math.floor(ty));
       if (b && my) {
-        panels.openBuilding(b, my);
+        panels.openBuilding(b, my, latest.buildings, latest.workers);
         return;
       }
       panels.close();
@@ -179,9 +196,11 @@ async function startGame(name: string): Promise<void> {
     onSprintChange: (on) => conn.send({ t: "sprint", on }),
     onRecenter: () => camera.recenter(),
     onBuildToggle: () => buildMode.toggleMenu(),
+    onLedgerToggle: () => ledger.toggle(),
     onEscape: () => {
       buildMode.cancel();
       panels.close();
+      ledger.close();
     },
   });
 
@@ -189,6 +208,7 @@ async function startGame(name: string): Promise<void> {
     const now = performance.now();
     players.update(now);
     npcs.update(now);
+    workers.update(now);
     camera.follow(players.position(welcome.id));
     camera.apply(worldRoot, app.screen.width, app.screen.height);
   });

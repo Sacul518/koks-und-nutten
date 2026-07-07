@@ -64,7 +64,7 @@ interface BuildingBase {
 }
 
 export type BuildingSnapshot =
-  | (BuildingBase & { kind: "growbox"; plant: number | null })
+  | (BuildingBase & { kind: "growbox"; plant: number | null; store: number })
   | (BuildingBase & { kind: "trockenraum"; drying: number[]; dried: number })
   | (BuildingBase & { kind: "packtisch"; queue: number; packing: number | null; baggies: number });
 
@@ -78,4 +78,69 @@ export interface NpcSnapshot {
   skin: number;
   /** Restliche Wartezeit in Sekunden, 0 = kaufbereit */
   cooldown: number;
+}
+
+// ── M3: Arbeiter & Ledger ───────────────────────────────────────────────────
+
+export type WorkerKind = "gaertner" | "kurier" | "dealer";
+
+export function isWorkerKind(v: unknown): v is WorkerKind {
+  return v === "gaertner" || v === "kurier" || v === "dealer";
+}
+
+export interface WorkerSnapshot {
+  id: string;
+  kind: WorkerKind;
+  /** Spielername des Arbeitgebers — er zahlt Lohn und kann entlassen. */
+  owner: string;
+  x: number;
+  y: number;
+  dir: Direction;
+  moving: boolean;
+  /** true = Lohn konnte nicht gezahlt werden, Arbeiter tut nichts. */
+  paused: boolean;
+  /** Getragene Einheiten (Kurier: Ware, Dealer: Baggies). */
+  carrying: number;
+  /** Zugewiesenes Gebäude (Gärtner: Growbox, Kurier: Quelle, Dealer: Baggie-Quelle). */
+  buildingId: string;
+  /** Nur Kurier: Zielgebäude. */
+  targetBuildingId: string | null;
+  /** Nur Dealer: Verkaufs-Distrikt (Index wie districtIdAt). */
+  district: number | null;
+}
+
+/** Buchhaltung einer Periode — Beträge in €, Produktionszahlen in Stück. */
+export interface LedgerPeriod {
+  /** Laufende Nummer der Periode (1, 2, …). */
+  n: number;
+  /** Einnahmen aus Verkäufen (Spieler + Dealer). */
+  income: number;
+  seedCost: number;
+  wageCost: number;
+  buildCost: number;
+  /** Verkaufte Baggies. */
+  sales: number;
+  /** Geerntete Einheiten. */
+  harvested: number;
+  /** Fertig getrocknete Einheiten. */
+  dried: number;
+  /** Fertig verpackte Baggies. */
+  packed: number;
+}
+
+/** Laufende Periode im Snapshot: zusätzlich der Zeitfortschritt. */
+export interface LedgerLive extends LedgerPeriod {
+  elapsedS: number;
+}
+
+export function emptyLedgerPeriod(n: number): LedgerPeriod {
+  return { n, income: 0, seedCost: 0, wageCost: 0, buildCost: 0, sales: 0, harvested: 0, dried: 0, packed: 0 };
+}
+
+export function ledgerExpenses(p: LedgerPeriod): number {
+  return p.seedCost + p.wageCost + p.buildCost;
+}
+
+export function ledgerProfit(p: LedgerPeriod): number {
+  return p.income - ledgerExpenses(p);
 }

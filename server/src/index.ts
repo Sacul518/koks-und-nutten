@@ -30,10 +30,17 @@ const seed = loadedSave?.seed ?? Number(process.env.SEED ?? Math.floor(Math.rand
 // Dev-Zeitraffer: TIME_SCALE=30 lässt Produktion/Cooldowns 30× schneller laufen.
 const timeScale = Math.max(1, Number(process.env.TIME_SCALE ?? 1) || 1);
 
-const game = new Game(seed, loadedSave?.players ?? [], loadedSave?.buildings ?? [], timeScale);
+const game = new Game(
+  seed,
+  loadedSave?.players ?? [],
+  loadedSave?.buildings ?? [],
+  loadedSave?.workers ?? [],
+  loadedSave?.ledger ?? null,
+  timeScale,
+);
 if (loadedSave) {
   console.log(
-    `[save] Spielstand geladen (Seed ${loadedSave.seed}, ${loadedSave.buildings.length} Gebäude, gespeichert ${loadedSave.savedAt})`,
+    `[save] Spielstand geladen (Seed ${loadedSave.seed}, ${loadedSave.buildings.length} Gebäude, ${loadedSave.workers.length} Arbeiter, gespeichert ${loadedSave.savedAt})`,
   );
 }
 if (timeScale > 1) {
@@ -42,7 +49,13 @@ if (timeScale > 1) {
 game.start();
 
 const saveNow = () => {
-  const save = saves.save({ seed: game.seed, players: game.savedPlayers(), buildings: game.savedBuildings() });
+  const save = saves.save({
+    seed: game.seed,
+    players: game.savedPlayers(),
+    buildings: game.savedBuildings(),
+    workers: game.savedWorkers(),
+    ledger: game.savedLedger(),
+  });
   console.log(`[save] Spielstand gespeichert (${save.savedAt})`);
   return save;
 };
@@ -106,6 +119,7 @@ wss.on("connection", (socket) => {
       conn.player = result.player;
       clearTimeout(joinTimeout);
       send({ t: "welcome", id: conn.player.id, seed: game.seed, players: game.snapshot() });
+      send({ t: "ledgerHistory", history: game.ledgerHistory() });
       console.log(`[join] ${conn.player.name} (${conn.player.id}), Spieler: ${game.players.size}`);
       return;
     }
