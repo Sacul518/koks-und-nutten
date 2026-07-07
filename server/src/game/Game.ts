@@ -3,6 +3,7 @@ import {
   BRIBE_COST_PER_PERIOD,
   BRIBE_GAIN_MULT,
   BUILDING_SPECS,
+  CONTROL_DECAY_PER_S,
   DEALER_CAPACITY,
   DEALER_SELL_TIME_S,
   DISTRICT_GRID,
@@ -15,7 +16,9 @@ import {
   HEAT_MAX,
   HEAT_PER_SALE,
   INTERACT_RANGE,
+  INTERCEPT_CHANCE_PER_S_AT_ZERO_CONTROL,
   KURIER_CAPACITY,
+  LAUNDER_SPECS,
   LEDGER_HISTORY_MAX,
   LEDGER_PERIOD_S,
   MAP_HEIGHT,
@@ -32,6 +35,7 @@ import {
   RAID_VALUE_PER_BAGGIE,
   RAID_VALUE_PER_DRIED,
   RAID_VALUE_PER_HARVEST,
+  RIVAL_SELL_INTERVAL_S,
   SEED_PRICE,
   SELL_RANGE,
   SPRINT_MULTIPLIER,
@@ -42,13 +46,16 @@ import {
   WALK_SPEED,
   WORKER_SPECS,
   WORKER_WALK_SPEED,
-  baggiePriceAt,
+  baggiePriceWithControl,
   districtIdAt,
+  districtPoliceMultipliers,
   districtPriceFactors,
+  districtRivalStrength,
   emptyLedgerPeriod,
   findNearestWalkable,
   findPath,
   generateCity,
+  isLaunderKind,
   isWalkable,
   tileAt,
   type BuildingKind,
@@ -56,6 +63,7 @@ import {
   type CityMap,
   type ClientMessage,
   type Direction,
+  type DistrictSnapshot,
   type Inventory,
   type LedgerPeriod,
   type NpcSnapshot,
@@ -108,6 +116,8 @@ export interface SavedBuilding {
   packProgress: number | null;
   /** Packtisch: fertige Baggies (Ausgabe) */
   baggies: number;
+  /** Waschsalon/Bar: schmutzige € in der Warteschlange der Front (bei anderen Kinds ungenutzt, 0). */
+  launderQueue: number;
 }
 
 /** Persistierter Teil eines Arbeiters (Laufzeit-Zustand wie Pfade wird neu aufgebaut). */
@@ -193,6 +203,19 @@ export class Game {
   readonly workers = new Map<string, Worker>();
   private readonly npcs = new Map<string, Npc>();
   private readonly priceFactors: number[];
+  /** M5: Polizei-Multiplikator je Distrikt (wirkt auf den Heat-Zuwachs bei Verkäufen). */
+  private readonly policeMultipliers: number[];
+  /** M5: Rivalen-Grundstärke je Distrikt. */
+  private readonly rivalStrength: number[];
+  /**
+   * M5: Gleitende Verkaufsanteile (Spieler vs. Rivalen) je Distrikt — bestimmen die Revierkontrolle.
+   * Bewusst nicht persistiert (wie raidTimers): baut sich nach einem Neustart einfach aus dem
+   * laufenden Verkaufsverhalten neu auf.
+   */
+  private readonly districtPlayerSalesEma: number[];
+  private readonly districtRivalSalesEma: number[];
+  /** M5: Timer bis zum nächsten Rivalen-Verkaufsschub, läuft mit prodDt — bewusst nicht persistiert. */
+  private rivalSellTimer = 0;
   private nextId = 1;
   private nextBuildingId = 1;
   private nextWorkerId = 1;
@@ -220,6 +243,10 @@ export class Game {
     this.seed = seed;
     this.map = generateCity(seed);
     this.priceFactors = districtPriceFactors(seed);
+    this.policeMultipliers = districtPoliceMultipliers(seed);
+    this.rivalStrength = districtRivalStrength(seed);
+    this.districtPlayerSalesEma = new Array(DISTRICT_GRID * DISTRICT_GRID).fill(0);
+    this.districtRivalSalesEma = new Array(DISTRICT_GRID * DISTRICT_GRID).fill(0);
     this.timeScale = timeScale;
     for (const p of savedPlayers) this.offline.set(p.name.toLowerCase(), p);
     for (const b of savedBuildings) {
@@ -351,6 +378,9 @@ export class Game {
       case "bribe":
         player.bribing = msg.on;
         break;
+      case "launder":
+        this.handleLaunder(player, msg.buildingId, msg.amount);
+        break;
       case "join":
         break;
     }
@@ -408,6 +438,9 @@ export class Game {
             packing: b.packProgress === null ? null : pct(b.packProgress),
             baggies: b.baggies,
           };
+        case "waschsalon":
+        case "bar":
+          return { ...base, kind: b.kind, queued: Math.round(b.launderQueue * 100) / 100 };
       }
     });
   }
@@ -428,6 +461,7 @@ export class Game {
       plantProgress: b.plantProgress === null ? null : round(b.plantProgress),
       drying: b.drying.map(round),
       packProgress: b.packProgress === null ? null : round(b.packProgress),
+      launderQueue: round(b.launderQueue),
     }));
   }
 
@@ -517,11 +551,14 @@ export class Game {
     for (const w of this.workers.values()) {
       if (inFootprint(w.x, w.y, PLAYER_RADIUS)) return this.fail(player, "Da steht jemand im Weg.");
     }
-    if (player.moneyClean + player.moneyDirty < spec.cost) {
-      return this.fail(player, `Zu wenig Geld (${spec.cost} € nötig).`);
+    if (player.moneyClean < spec.cost) {
+      return this.fail(
+        player,
+        `Zu wenig sauberes Geld (${spec.cost} € nötig, ${Math.floor(player.moneyClean)} € sauber verfügbar).`,
+      );
     }
 
-    this.spend(player, spec.cost);
+    player.moneyClean -= spec.cost;
     this.ledger.buildCost += spec.cost;
     const building: SavedBuilding = {
       id: `b${this.nextBuildingId++}`,
@@ -536,6 +573,7 @@ export class Game {
       packQueue: 0,
       packProgress: null,
       baggies: 0,
+      launderQueue: 0,
     };
     this.buildings.set(building.id, building);
     this.blockFootprint(building);
@@ -650,14 +688,33 @@ export class Game {
     if (npc.cooldownS > 0) return this.fail(player, "Dieser Passant hat gerade erst gekauft.");
     if (player.inv.baggies < 1) return this.fail(player, "Keine Baggies dabei.");
 
-    const price = baggiePriceAt(this.priceFactors, Math.floor(npc.x), Math.floor(npc.y));
+    const district = districtIdAt(Math.floor(npc.x), Math.floor(npc.y));
+    const price = this.priceAt(npc.x, npc.y);
     player.inv.baggies--;
     player.moneyDirty += price;
     npc.cooldownS = NPC_BUY_COOLDOWN_S;
     this.ledger.income += price;
     this.ledger.sales++;
     player.send({ t: "sold", price });
-    this.addHeatByName(player.name, HEAT_PER_SALE * (player.bribing ? BRIBE_GAIN_MULT : 1));
+    this.districtPlayerSalesEma[district]! += 1;
+    this.addHeatByName(
+      player.name,
+      HEAT_PER_SALE * (player.bribing ? BRIBE_GAIN_MULT : 1) * this.policeMultipliers[district]!,
+    );
+  }
+
+  /** M5: Geld aus der Warteschlange einer Geldwäsche-Front (Waschsalon/Bar) füllen. */
+  private handleLaunder(player: GamePlayer, buildingId: string, amount: number): void {
+    const b = this.usableBuilding(player, buildingId);
+    if (typeof b === "string") return this.fail(player, b);
+    if (!isLaunderKind(b.kind)) return this.fail(player, "Das ist keine Geldwäsche-Front.");
+    if (player.moneyDirty < amount) return this.fail(player, "Zu wenig schmutziges Geld.");
+    const spec = LAUNDER_SPECS[b.kind];
+    if (b.launderQueue + amount > spec.queueMax) {
+      return this.fail(player, "Die Warteschlange ist voll.");
+    }
+    player.moneyDirty -= amount;
+    b.launderQueue += amount;
   }
 
   // ── M3: Arbeiter anheuern/entlassen ────────────────────────────────────────
@@ -768,6 +825,17 @@ export class Game {
     if (off) off.moneyDirty += amount;
   }
 
+  /** M5: Gewaschenes Geld einer Front dem Besitzer gutschreiben (immer sauber). */
+  private creditOwnerClean(name: string, amount: number): void {
+    const online = this.playerByName(name);
+    if (online) {
+      online.moneyClean += amount;
+      return;
+    }
+    const off = this.offline.get(name.toLowerCase());
+    if (off) off.moneyClean += amount;
+  }
+
   private playerByName(name: string): GamePlayer | null {
     for (const p of this.players.values()) {
       if (p.name.toLowerCase() === name.toLowerCase()) return p;
@@ -856,6 +924,7 @@ export class Game {
     for (const w of this.workers.values()) this.tickWorker(w, dt, prodDt);
     this.tickHeat(prodDt);
     this.tickRaids(prodDt);
+    this.tickDistrictControl(prodDt);
     this.tickLedger(prodDt);
     if (this.players.size > 0) {
       this.broadcast({
@@ -865,6 +934,7 @@ export class Game {
         buildings: this.buildingSnapshot(),
         workers: this.workerSnapshot(),
         ledger: { ...this.ledger, elapsedS: Math.round(this.ledgerElapsedS * 10) / 10 },
+        districts: this.districtSnapshot(),
       });
     }
   }
@@ -962,6 +1032,47 @@ export class Game {
     if (online) online.send({ t: "raided", buildingId: b.id, buildingKind: b.kind, lossValue });
   }
 
+  // ── M5: Reviere & Rivalen ──────────────────────────────────────────────────
+
+  /** Zerfällt die Verkaufsanteile beider Seiten und lässt Rivalen in festen Abständen "verkaufen". */
+  private tickDistrictControl(prodDt: number): void {
+    const factor = Math.exp(-CONTROL_DECAY_PER_S * prodDt);
+    for (let d = 0; d < this.districtPlayerSalesEma.length; d++) {
+      this.districtPlayerSalesEma[d]! *= factor;
+      this.districtRivalSalesEma[d]! *= factor;
+    }
+    this.rivalSellTimer += prodDt;
+    while (this.rivalSellTimer >= RIVAL_SELL_INTERVAL_S) {
+      this.rivalSellTimer -= RIVAL_SELL_INTERVAL_S;
+      for (let d = 0; d < this.districtRivalSalesEma.length; d++) {
+        this.districtRivalSalesEma[d]! += this.rivalStrength[d]!;
+      }
+    }
+  }
+
+  /** Revierkontrolle eines Distrikts: 0 (Rivalen dominieren) … 1 (Spieler dominieren). */
+  private controlAt(d: number): number {
+    const EPS = 0.001;
+    const p = this.districtPlayerSalesEma[d]!;
+    const r = this.districtRivalSalesEma[d]!;
+    return (p + EPS) / (p + r + 2 * EPS);
+  }
+
+  /** Baggie-Verkaufspreis an einer Position inkl. Revierkontrolle. */
+  private priceAt(x: number, y: number): number {
+    return baggiePriceWithControl(this.priceFactors, this.controlAt(districtIdAt(Math.floor(x), Math.floor(y))), x, y);
+  }
+
+  districtSnapshot(): DistrictSnapshot[] {
+    return this.priceFactors.map((priceFactor, d) => ({
+      id: d,
+      control: Math.round(this.controlAt(d) * 1000) / 1000,
+      priceFactor,
+      policeMultiplier: this.policeMultipliers[d]!,
+      rivalStrength: this.rivalStrength[d]!,
+    }));
+  }
+
   private tickBuilding(b: SavedBuilding, dt: number): void {
     switch (b.kind) {
       case "growbox":
@@ -994,6 +1105,18 @@ export class Game {
           }
         }
         break;
+      case "waschsalon":
+      case "bar": {
+        const spec = LAUNDER_SPECS[b.kind];
+        const processed = Math.min(b.launderQueue, spec.ratePerS * dt);
+        if (processed > 0) {
+          b.launderQueue -= processed;
+          const clean = processed * (1 - spec.feePct);
+          this.creditOwnerClean(b.owner, clean);
+          this.ledger.launderFee += processed * spec.feePct;
+        }
+        break;
+      }
     }
   }
 
@@ -1061,7 +1184,7 @@ export class Game {
         this.tickGaertner(w);
         break;
       case "kurier":
-        this.tickKurier(w, dt);
+        this.tickKurier(w, dt, prodDt);
         break;
       case "dealer":
         this.tickDealer(w, dt, prodDt);
@@ -1089,7 +1212,21 @@ export class Game {
   }
 
   /** Kurier pendelt zwischen Quelle und Ziel; nimmt, was da ist (max. KURIER_CAPACITY). */
-  private tickKurier(w: Worker, dt: number): void {
+  private tickKurier(w: Worker, dt: number, prodDt: number): void {
+    if (w.carrying > 0) {
+      const d = districtIdAt(Math.floor(w.x), Math.floor(w.y));
+      const chance = INTERCEPT_CHANCE_PER_S_AT_ZERO_CONTROL * (1 - this.controlAt(d)) * prodDt;
+      if (Math.random() < chance) {
+        const from = this.buildings.get(w.buildingId);
+        const valuePerUnit = from?.kind === "growbox" ? RAID_VALUE_PER_HARVEST : RAID_VALUE_PER_DRIED;
+        const lossValue = w.carrying * valuePerUnit;
+        this.ledger.interceptLoss += lossValue;
+        w.carrying = 0;
+        const online = this.playerByName(w.owner);
+        online?.send({ t: "intercepted", workerId: w.id, lossValue });
+      }
+    }
+
     const from = this.buildings.get(w.buildingId);
     const to = w.targetBuildingId === null ? undefined : this.buildings.get(w.targetBuildingId);
     if (!from || !to) {
@@ -1175,13 +1312,18 @@ export class Game {
         w.sellT += prodDt;
         if (w.sellT >= DEALER_SELL_TIME_S) {
           w.sellT = 0;
-          const price = baggiePriceAt(this.priceFactors, Math.floor(npc.x), Math.floor(npc.y));
+          const district = districtIdAt(Math.floor(npc.x), Math.floor(npc.y));
+          const price = this.priceAt(npc.x, npc.y);
           w.carrying--;
           this.creditOwnerDirty(w.owner, price);
           npc.cooldownS = NPC_BUY_COOLDOWN_S;
           this.ledger.income += price;
           this.ledger.sales++;
-          this.addHeatByName(w.owner, HEAT_PER_SALE * (this.isBribing(w.owner) ? BRIBE_GAIN_MULT : 1));
+          this.districtPlayerSalesEma[district]! += 1;
+          this.addHeatByName(
+            w.owner,
+            HEAT_PER_SALE * (this.isBribing(w.owner) ? BRIBE_GAIN_MULT : 1) * this.policeMultipliers[district]!,
+          );
           w.targetNpcId = null;
         }
         return;

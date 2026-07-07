@@ -35,6 +35,8 @@ export const BUILDING_SPECS: Record<BuildingKind, BuildingSpec> = {
   growbox: { name: "Growbox", cost: 120, w: 2, h: 2 },
   trockenraum: { name: "Trockenraum", cost: 100, w: 2, h: 2 },
   packtisch: { name: "Packtisch", cost: 80, w: 2, h: 2 },
+  waschsalon: { name: "Waschsalon", cost: 300, w: 2, h: 2 },
+  bar: { name: "Bar", cost: 600, w: 2, h: 2 },
 };
 
 /** Startgeld neuer Spieler (sauber; schmutziges Geld kommt nur aus Verkäufen). */
@@ -131,3 +133,37 @@ export const RAID_VALUE_PER_HARVEST = 5;
 export const BRIBE_COST_PER_PERIOD = 15;
 /** Bestechung: Faktor auf den Heat-Zuwachs pro Verkauf, solange aktiv (dämpft, ersetzt nicht). */
 export const BRIBE_GAIN_MULT = 0.4;
+
+// ── M5: Reviere, Rivalen, Geldwäsche (Balancing) ────────────────────────────
+
+/** Spanne der Polizei-Multiplikatoren je Distrikt (wirkt auf den Heat-Zuwachs bei Verkäufen dort). */
+export const DISTRICT_POLICE_MIN = 0.7;
+export const DISTRICT_POLICE_MAX = 1.4;
+
+/** Spanne der Rivalen-Grundstärke je Distrikt (deterministisch aus dem Seed). */
+export const RIVAL_STRENGTH_MIN = 0.4;
+export const RIVAL_STRENGTH_MAX = 1.3;
+/** Abstand zwischen Rivalen-Verkaufsschüben je Distrikt in Sekunden (läuft mit TIME_SCALE). */
+export const RIVAL_SELL_INTERVAL_S = 15;
+/** Zerfallsrate der Verkaufsanteile (Kontrolle) pro Sekunde — bestimmt das Zeitfenster, über das Reviere gemessen werden (~2 Minuten). */
+export const CONTROL_DECAY_PER_S = 1 / 120;
+/** Preisfaktor bei Kontrolle 0 (Rivalen dominieren komplett); bei Kontrolle 1 gilt Faktor 1. */
+export const RIVAL_PRICE_FLOOR = 0.55;
+
+/** Kurier-Abfangrisiko: Chance pro Sekunde bei Kontrolle 0 (komplettes Fremdrevier), läuft mit TIME_SCALE; skaliert linear mit (1 - Kontrolle). */
+export const INTERCEPT_CHANCE_PER_S_AT_ZERO_CONTROL = 0.008;
+
+export interface LaunderSpec {
+  /** € Durchsatz pro Sekunde (läuft mit TIME_SCALE) — der eigentliche Engpass. */
+  ratePerS: number;
+  /** Anteil, der bei der Wäsche als Gebühr verloren geht (0..1). */
+  feePct: number;
+  /** Maximal wartende schmutzige € in der Warteschlange. */
+  queueMax: number;
+}
+
+/** Geldwäsche-Fronts: wandeln schmutziges in sauberes Geld, gedrosselt durch ratePerS. */
+export const LAUNDER_SPECS: Record<"waschsalon" | "bar", LaunderSpec> = {
+  waschsalon: { ratePerS: 2, feePct: 0.12, queueMax: 500 },
+  bar: { ratePerS: 5, feePct: 0.18, queueMax: 1000 },
+};

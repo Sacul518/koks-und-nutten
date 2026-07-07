@@ -6,6 +6,7 @@ import {
   DRY_TIME_S,
   GROW_TIME_S,
   HARVEST_YIELD,
+  LAUNDER_SPECS,
   MAP_HEIGHT,
   MAP_WIDTH,
   PACK_TIME_S,
@@ -34,6 +35,8 @@ const BUILDING_INFO: Record<BuildingKind, string> = {
   growbox: `1 Samen → ${GROW_TIME_S} s → ${HARVEST_YIELD} Ernte`,
   trockenraum: `Ernte → ${DRY_TIME_S} s → getrocknet · Kapazität ${DRY_CAPACITY}`,
   packtisch: `1 getrocknet → ${PACK_TIME_S} s → ${BAGGIES_PER_DRIED} Baggies`,
+  waschsalon: `Wäscht Geld: ${LAUNDER_SPECS.waschsalon.ratePerS} €/s · ${Math.round(LAUNDER_SPECS.waschsalon.feePct * 100)} % Gebühr · max. ${LAUNDER_SPECS.waschsalon.queueMax} € Warteschlange`,
+  bar: `Wäscht Geld: ${LAUNDER_SPECS.bar.ratePerS} €/s · ${Math.round(LAUNDER_SPECS.bar.feePct * 100)} % Gebühr · max. ${LAUNDER_SPECS.bar.queueMax} € Warteschlange`,
 };
 
 /**
@@ -178,6 +181,8 @@ export class BuildMode {
         put(tex.lineEmpty[1], 1, 0.35);
         break;
       case "packtisch":
+      case "waschsalon":
+      case "bar":
         for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 2; tx++) put(tex.floor, tx, ty);
         put(tex.counter[0], 0, 0.7);
         put(tex.counter[1], 1, 0.7);

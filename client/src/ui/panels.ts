@@ -5,14 +5,16 @@ import {
   DRY_TIME_S,
   GROW_TIME_S,
   HARVEST_YIELD,
+  LAUNDER_SPECS,
   PACK_QUEUE_MAX,
   PACK_TIME_S,
   SEED_PRICE,
   WORKER_SPECS,
-  baggiePriceAt,
+  baggiePriceWithControl,
   districtIdAt,
   type BuildingSnapshot,
   type ClientMessage,
+  type DistrictSnapshot,
   type NpcSnapshot,
   type PlayerSnapshot,
   type WorkerSnapshot,
@@ -36,6 +38,7 @@ export class Panels {
   private open: OpenTarget = null;
   private buttons: ActionButton[] = [];
   private workers: WorkerSnapshot[] = [];
+  private districts: DistrictSnapshot[] = [];
   private readonly panel = document.getElementById("panel")!;
   private readonly titleEl = document.getElementById("panel-title")!;
   private readonly bodyEl = document.getElementById("panel-body")!;
@@ -52,6 +55,10 @@ export class Panels {
 
   isOpen(): boolean {
     return this.open !== null;
+  }
+
+  setDistricts(districts: DistrictSnapshot[]): void {
+    this.districts = districts;
   }
 
   openBuilding(b: BuildingSnapshot, me: PlayerSnapshot, buildings: BuildingSnapshot[], workers: WorkerSnapshot[]): void {
@@ -104,6 +111,12 @@ export class Panels {
             "kind" in eb && eb.kind === "packtisch" && eb.baggies > 0,
           );
           this.addHireDealer(b);
+          break;
+        case "waschsalon":
+        case "bar":
+          this.addLaunderButton(b, 50);
+          this.addLaunderButton(b, 200);
+          this.addLaunderButton(b, 1000);
           break;
       }
     }
@@ -215,15 +228,30 @@ export class Panels {
     const homeDistrict = districtIdAt(b.x, b.y);
     for (let d = 0; d < DISTRICT_GRID * DISTRICT_GRID; d++) {
       const factor = this.priceFactors[d]!;
+      const control = this.controlFor(d);
       const el = this.addButton(
-        `×${factor.toFixed(2)}`,
+        `×${factor.toFixed(2)} · ${Math.round(control * 100)}%`,
         { t: "hire", kind: "dealer", buildingId: b.id, district: d },
         (_, p) => money(p) >= wage,
         grid,
       );
       el.classList.add("district-btn");
+      el.classList.add(control < 0.35 ? "district-rival" : control > 0.65 ? "district-mine" : "district-contested");
       if (d === homeDistrict) el.classList.add("district-home");
     }
+  }
+
+  // ── Geldwäsche ──────────────────────────────────────────────────────────────
+
+  private addLaunderButton(b: BuildingSnapshot, amount: number): void {
+    this.addButton(`${amount} € waschen`, { t: "launder", buildingId: b.id, amount }, (eb, p) => {
+      if (!("kind" in eb) || (eb.kind !== "waschsalon" && eb.kind !== "bar")) return false;
+      return p.money.dirty >= amount && eb.queued + amount <= LAUNDER_SPECS[eb.kind].queueMax;
+    });
+  }
+
+  private controlFor(districtId: number): number {
+    return this.districts.find((d) => d.id === districtId)?.control ?? 0.5;
   }
 
   private refreshButtons(entity: BuildingSnapshot | NpcSnapshot, me: PlayerSnapshot): void {
@@ -260,6 +288,15 @@ export class Panels {
         lines.push(`Fertige Baggies: ${b.baggies} (${BAGGIES_PER_DRIED} je Einheit)`);
         lines.push(`Weed dabei: ${me.inv.dried}`);
         break;
+      case "waschsalon":
+      case "bar": {
+        const spec = LAUNDER_SPECS[b.kind];
+        this.titleEl.textContent = `${b.kind === "waschsalon" ? "Waschsalon" : "Bar"} ${b.id}`;
+        lines.push(`Warteschlange: ${b.queued} / ${spec.queueMax} €`);
+        lines.push(`Durchsatz: ${spec.ratePerS} €/s · ${Math.round(spec.feePct * 100)} % Gebühr`);
+        lines.push(`Schmutziges Geld dabei: ${me.money.dirty} €`);
+        break;
+      }
     }
     const staff = this.workers.filter((w) => w.buildingId === b.id || w.targetBuildingId === b.id);
     if (staff.length > 0) {
@@ -272,10 +309,13 @@ export class Panels {
 
   private renderNpc(n: NpcSnapshot, me: PlayerSnapshot): void {
     this.titleEl.textContent = "Passant";
-    const price = baggiePriceAt(this.priceFactors, Math.floor(n.x), Math.floor(n.y));
-    const factor = this.priceFactors[districtIdAt(Math.floor(n.x), Math.floor(n.y))]!;
+    const districtId = districtIdAt(Math.floor(n.x), Math.floor(n.y));
+    const control = this.controlFor(districtId);
+    const price = baggiePriceWithControl(this.priceFactors, control, Math.floor(n.x), Math.floor(n.y));
+    const factor = this.priceFactors[districtId]!;
     const lines = [
       `Distrikt-Faktor: ×${factor.toFixed(2)}`,
+      `Revier-Kontrolle: ${Math.round(control * 100)} % ${control >= 0.5 ? "(dein Revier)" : "(Rivalen dominieren)"}`,
       `Baggie-Preis hier: ${price} € (schmutzig)`,
       n.cooldown > 0 ? `Hat gerade gekauft — wartet noch ${n.cooldown} s` : "Kaufbereit",
       `Baggies dabei: ${me.inv.baggies}`,

@@ -6,6 +6,7 @@ import {
   districtPriceFactors,
   generateCity,
   type BuildingSnapshot,
+  type DistrictSnapshot,
   type NpcSnapshot,
   type PlayerSnapshot,
   type WorkerSnapshot,
@@ -96,11 +97,13 @@ async function startGame(name: string): Promise<void> {
     npcs: NpcSnapshot[];
     buildings: BuildingSnapshot[];
     workers: WorkerSnapshot[];
+    districts: DistrictSnapshot[];
   } = {
     players: welcome.players,
     npcs: [],
     buildings: [],
     workers: [],
+    districts: [],
   };
   const me = (): PlayerSnapshot | undefined => latest.players.find((p) => p.id === welcome.id);
 
@@ -119,7 +122,13 @@ async function startGame(name: string): Promise<void> {
   (document.getElementById("ledger-button") as HTMLButtonElement).onclick = () => ledger.toggle();
 
   conn.onSnapshot = (msg) => {
-    latest = { players: msg.players, npcs: msg.npcs, buildings: msg.buildings, workers: msg.workers };
+    latest = {
+      players: msg.players,
+      npcs: msg.npcs,
+      buildings: msg.buildings,
+      workers: msg.workers,
+      districts: msg.districts,
+    };
     const now = performance.now();
     players.applySnapshot(msg.players, now);
     npcs.applySnapshot(msg.npcs, now);
@@ -127,8 +136,9 @@ async function startGame(name: string): Promise<void> {
     workers.applySnapshot(msg.workers, now);
     const my = me();
     if (my) hud.update(my);
+    panels.setDistricts(msg.districts);
     panels.refresh(msg.buildings, msg.npcs, msg.workers, my);
-    ledger.update({ ledger: msg.ledger, workers: msg.workers, buildings: msg.buildings, me: my });
+    ledger.update({ ledger: msg.ledger, workers: msg.workers, buildings: msg.buildings, me: my, districts: msg.districts });
     buildMode.refresh();
     updatePlayerList(msg.players, welcome.id);
   };
@@ -137,6 +147,8 @@ async function startGame(name: string): Promise<void> {
   conn.onLedgerHistory = (history) => ledger.setHistory(history);
   conn.onRaided = (_buildingId, buildingKind, lossValue) =>
     hud.toast(`Razzia im ${BUILDING_SPECS[buildingKind].name}: ${lossValue} € Warenverlust!`, "error");
+  conn.onIntercepted = (_workerId, lossValue) =>
+    hud.toast(`Kurier abgefangen: ${lossValue} € Warenverlust!`, "error");
   conn.onDisconnect = () => {
     started = false;
     panels.close();

@@ -12,7 +12,7 @@ import {
 import type { SavedBuilding, SavedLedger, SavedPlayer, SavedWorker } from "../game/Game.ts";
 
 /** Bei Format-Änderungen hochzählen und in migrate() einen Schritt ergänzen. */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 export const AUTOSAVE_INTERVAL_MS = 5 * 60_000;
 
@@ -165,6 +165,24 @@ function migrate(d: Record<string, unknown>): Record<string, unknown> {
     }
     d.saveVersion = 4;
   }
+  if (d.saveVersion === 4) {
+    // v4 → v5: Geldwäsche-Fronts (launderQueue je Gebäude), Wäsche-/Abfangverluste im Ledger.
+    d.buildings = (Array.isArray(d.buildings) ? d.buildings : []).map((b) => ({
+      launderQueue: 0,
+      ...(b as Record<string, unknown>),
+    }));
+    const migrateLedgerPeriod = (p: unknown) => ({
+      launderFee: 0,
+      interceptLoss: 0,
+      ...(p as Record<string, unknown>),
+    });
+    const ledger = d.ledger as Record<string, unknown> | undefined;
+    if (ledger && typeof ledger === "object") {
+      if (ledger.current) ledger.current = migrateLedgerPeriod(ledger.current);
+      if (Array.isArray(ledger.history)) ledger.history = ledger.history.map(migrateLedgerPeriod);
+    }
+    d.saveVersion = 5;
+  }
   console.log(`[save] Spielstand von v${String(from)} auf v${String(d.saveVersion)} migriert`);
   return d;
 }
@@ -217,7 +235,8 @@ function isSavedBuilding(b: unknown): b is SavedBuilding {
     typeof d.dried === "number" &&
     typeof d.packQueue === "number" &&
     (d.packProgress === null || typeof d.packProgress === "number") &&
-    typeof d.baggies === "number"
+    typeof d.baggies === "number" &&
+    typeof d.launderQueue === "number"
   );
 }
 
@@ -254,6 +273,8 @@ function isLedgerPeriod(p: unknown): p is LedgerPeriod {
     "packed",
     "raidLoss",
     "bribeCost",
+    "launderFee",
+    "interceptLoss",
   ].every((k) => typeof d[k] === "number");
 }
 

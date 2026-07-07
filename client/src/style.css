@@ -326,6 +326,18 @@ body {
   outline-offset: -2px;
 }
 
+.district-rival {
+  background: #5a2a2a;
+}
+
+.district-contested {
+  background: #4a4526;
+}
+
+.district-mine {
+  background: #245c3a;
+}
+
 .panel-close {
   margin-top: 0.6rem;
   width: 100%;
@@ -489,6 +501,27 @@ body {
 
 #bribe-button.bribe-active {
   background: #8c2828;
+}
+
+#ledger-districts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.district-tile {
+  border-radius: 0.4rem;
+  padding: 0.4rem;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #e8e8ee;
+  text-align: center;
+}
+
+.district-tile-pos {
+  font-weight: 600;
+  color: #c8c8d4;
 }
 
 #ledger-personal {

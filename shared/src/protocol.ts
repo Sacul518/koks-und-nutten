@@ -4,6 +4,7 @@ import {
   isWorkerKind,
   type BuildingKind,
   type BuildingSnapshot,
+  type DistrictSnapshot,
   type LedgerLive,
   type LedgerPeriod,
   type NpcSnapshot,
@@ -30,7 +31,9 @@ export type ClientMessage =
   | { t: "hire"; kind: WorkerKind; buildingId: string; targetBuildingId?: string; district?: number }
   | { t: "fire"; workerId: string }
   // M4: Bestechung
-  | { t: "bribe"; on: boolean };
+  | { t: "bribe"; on: boolean }
+  // M5: Geldwäsche — schmutziges Geld in die Warteschlange einer Front geben
+  | { t: "launder"; buildingId: string; amount: number };
 
 export type ServerMessage =
   | { t: "welcome"; id: string; seed: number; players: PlayerSnapshot[] }
@@ -43,6 +46,8 @@ export type ServerMessage =
       workers: WorkerSnapshot[];
       /** Laufende Ledger-Periode (Team-weit). */
       ledger: LedgerLive;
+      /** M5: Revierkontrolle + Preis-/Polizei-Kontext je Distrikt. */
+      districts: DistrictSnapshot[];
     }
   | { t: "playerLeft"; id: string }
   /** Abgeschlossene Perioden — beim Join und nach jedem Periodenwechsel. */
@@ -52,7 +57,9 @@ export type ServerMessage =
   /** Erfolgreicher Baggie-Verkauf (nur an den Verkäufer) */
   | { t: "sold"; price: number }
   /** M4: Razzia in einem eigenen Gebäude (nur an den Besitzer, falls online) */
-  | { t: "raided"; buildingId: string; buildingKind: BuildingKind; lossValue: number };
+  | { t: "raided"; buildingId: string; buildingKind: BuildingKind; lossValue: number }
+  /** M5: Kurier in einem Fremdrevier abgefangen (nur an den Besitzer, falls online) */
+  | { t: "intercepted"; workerId: string; lossValue: number };
 
 export function parseClientMessage(raw: unknown): ClientMessage | null {
   if (typeof raw !== "string") return null;
@@ -128,6 +135,16 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
       return null;
     case "bribe":
       if (typeof m.on === "boolean") return { t: "bribe", on: m.on };
+      return null;
+    case "launder":
+      if (
+        typeof m.buildingId === "string" &&
+        typeof m.amount === "number" &&
+        Number.isInteger(m.amount) &&
+        m.amount >= 1
+      ) {
+        return { t: "launder", buildingId: m.buildingId, amount: m.amount };
+      }
       return null;
     default:
       return null;

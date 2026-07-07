@@ -1,5 +1,5 @@
 import { Container, Sprite, Text } from "pixi.js";
-import { TILE_SIZE, type BuildingSnapshot } from "@koks/shared";
+import { BUILDING_SPECS, TILE_SIZE, type BuildingSnapshot } from "@koks/shared";
 import type { GameTextures } from "./assets.ts";
 
 interface RenderedBuilding {
@@ -71,7 +71,9 @@ export class BuildingLayer {
         line = [put(tex.lineEmpty[0], 0, 0.35), put(tex.lineEmpty[1], 1, 0.35)];
         break;
       }
-      case "packtisch": {
+      case "packtisch":
+      case "waschsalon":
+      case "bar": {
         for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 2; tx++) put(tex.floor, tx, ty);
         put(tex.counter[0], 0, 0.7);
         put(tex.counter[1], 1, 0.7);
@@ -127,6 +129,12 @@ export class BuildingLayer {
           inWork === 0 && b.baggies === 0
             ? "Packtisch · leer"
             : `Packtisch · ${inWork} offen · ${b.baggies} Baggies`;
+        break;
+      }
+      case "waschsalon":
+      case "bar": {
+        const name = BUILDING_SPECS[b.kind].name;
+        rb.label.text = b.queued === 0 ? `${name} · leer` : `${name} · ${b.queued} € wartend`;
         break;
       }
     }

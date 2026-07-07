@@ -22,6 +22,7 @@ export class Connection {
   onSold: ((price: number) => void) | null = null;
   onLedgerHistory: ((history: LedgerPeriod[]) => void) | null = null;
   onRaided: ((buildingId: string, buildingKind: BuildingKind, lossValue: number) => void) | null = null;
+  onIntercepted: ((workerId: string, lossValue: number) => void) | null = null;
 
   join(name: string): Promise<JoinSuccess> {
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -61,6 +62,9 @@ export class Connection {
             break;
           case "raided":
             this.onRaided?.(msg.buildingId, msg.buildingKind, msg.lossValue);
+            break;
+          case "intercepted":
+            this.onIntercepted?.(msg.workerId, msg.lossValue);
             break;
         }
       };

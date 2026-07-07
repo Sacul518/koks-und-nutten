@@ -53,10 +53,17 @@ export interface PlayerSnapshot {
 
 // ── M2: Gebäude & Passanten ─────────────────────────────────────────────────
 
-export type BuildingKind = "growbox" | "trockenraum" | "packtisch";
+export type BuildingKind = "growbox" | "trockenraum" | "packtisch" | "waschsalon" | "bar";
 
 export function isBuildingKind(v: unknown): v is BuildingKind {
-  return v === "growbox" || v === "trockenraum" || v === "packtisch";
+  return (
+    v === "growbox" || v === "trockenraum" || v === "packtisch" || v === "waschsalon" || v === "bar"
+  );
+}
+
+/** Geldwäsche-Fronts (M5): Waschsalon und Bar teilen sich das gleiche Snapshot-Format. */
+export function isLaunderKind(v: BuildingKind): v is "waschsalon" | "bar" {
+  return v === "waschsalon" || v === "bar";
 }
 
 interface BuildingBase {
@@ -70,7 +77,8 @@ interface BuildingBase {
 export type BuildingSnapshot =
   | (BuildingBase & { kind: "growbox"; plant: number | null; store: number })
   | (BuildingBase & { kind: "trockenraum"; drying: number[]; dried: number })
-  | (BuildingBase & { kind: "packtisch"; queue: number; packing: number | null; baggies: number });
+  | (BuildingBase & { kind: "packtisch"; queue: number; packing: number | null; baggies: number })
+  | (BuildingBase & { kind: "waschsalon" | "bar"; queued: number });
 
 export interface NpcSnapshot {
   id: string;
@@ -82,6 +90,21 @@ export interface NpcSnapshot {
   skin: number;
   /** Restliche Wartezeit in Sekunden, 0 = kaufbereit */
   cooldown: number;
+}
+
+// ── M5: Reviere & Rivalen ────────────────────────────────────────────────────
+
+/** Zustand eines Distrikts, wie er dem Client jeden Tick gesendet wird. */
+export interface DistrictSnapshot {
+  id: number;
+  /** 0 (Rivalen dominieren) … 1 (Spieler dominieren) — Verkaufsanteile der letzten ~2 Minuten. */
+  control: number;
+  /** Seed-bestimmter Preisfaktor auf den Basis-Baggiepreis. */
+  priceFactor: number;
+  /** Seed-bestimmter Multiplikator auf den Heat-Zuwachs bei Verkäufen in diesem Distrikt. */
+  policeMultiplier: number;
+  /** Seed-bestimmte Grundstärke der Rivalen-Gang (Kontext für die Revierkarte). */
+  rivalStrength: number;
 }
 
 // ── M3: Arbeiter & Ledger ───────────────────────────────────────────────────
@@ -134,6 +157,10 @@ export interface LedgerPeriod {
   raidLoss: number;
   /** M4: Bestechungsgelder (€). */
   bribeCost: number;
+  /** M5: Gebühren bei der Geldwäsche (€, gehen verloren). */
+  launderFee: number;
+  /** M5: Warenverlust durch abgefangene Kuriere in Fremdrevieren (€). */
+  interceptLoss: number;
 }
 
 /** Laufende Periode im Snapshot: zusätzlich der Zeitfortschritt. */
@@ -154,11 +181,13 @@ export function emptyLedgerPeriod(n: number): LedgerPeriod {
     packed: 0,
     raidLoss: 0,
     bribeCost: 0,
+    launderFee: 0,
+    interceptLoss: 0,
   };
 }
 
 export function ledgerExpenses(p: LedgerPeriod): number {
-  return p.seedCost + p.wageCost + p.buildCost + p.raidLoss + p.bribeCost;
+  return p.seedCost + p.wageCost + p.buildCost + p.raidLoss + p.bribeCost + p.launderFee + p.interceptLoss;
 }
 
 export function ledgerProfit(p: LedgerPeriod): number {

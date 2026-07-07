@@ -8,6 +8,7 @@ import {
   ledgerProfit,
   type BuildingSnapshot,
   type ClientMessage,
+  type DistrictSnapshot,
   type LedgerLive,
   type LedgerPeriod,
   type PlayerSnapshot,
@@ -25,6 +26,7 @@ interface SnapshotData {
   workers: WorkerSnapshot[];
   buildings: BuildingSnapshot[];
   me: PlayerSnapshot | undefined;
+  districts: DistrictSnapshot[];
 }
 
 /**
@@ -38,6 +40,7 @@ export class LedgerScreen {
   private readonly canvas = document.getElementById("ledger-chart") as HTMLCanvasElement;
   private readonly chartInfoEl = document.getElementById("ledger-chart-info")!;
   private readonly bribeButton = document.getElementById("bribe-button") as HTMLButtonElement;
+  private readonly districtsEl = document.getElementById("ledger-districts")!;
   private readonly personalEl = document.getElementById("ledger-personal")!;
 
   private history: LedgerPeriod[] = [];
@@ -97,6 +100,7 @@ export class LedgerScreen {
     this.renderTable(ledger);
     this.renderChart(ledger);
     this.renderBribe();
+    this.renderDistricts();
     this.renderPersonal();
   }
 
@@ -108,6 +112,29 @@ export class LedgerScreen {
       ? "Bestechung: AN — abschalten"
       : `Bestechung: AUS (${BRIBE_COST_PER_PERIOD} €/Periode) — anschalten`;
     this.bribeButton.classList.toggle("bribe-active", bribing);
+  }
+
+  // ── Reviere ─────────────────────────────────────────────────────────────────
+
+  private renderDistricts(): void {
+    const districts = this.latest!.districts;
+    this.districtsEl.replaceChildren();
+    for (let d = 0; d < DISTRICT_GRID * DISTRICT_GRID; d++) {
+      const gx = d % DISTRICT_GRID;
+      const gy = Math.floor(d / DISTRICT_GRID);
+      const dist = districts.find((x) => x.id === d);
+      const control = dist?.control ?? 0.5;
+      const tile = document.createElement("div");
+      tile.className = "district-tile";
+      tile.style.background = `hsl(${Math.round(control * 120)}, 55%, 22%)`;
+      tile.innerHTML = [
+        `<div class="district-tile-pos">${gx + 1}|${gy + 1}</div>`,
+        `<div>${Math.round(control * 100)} % Kontrolle</div>`,
+        `<div>×${(dist?.priceFactor ?? 1).toFixed(2)} Preis</div>`,
+        `<div>×${(dist?.policeMultiplier ?? 1).toFixed(2)} Polizei</div>`,
+      ].join("");
+      this.districtsEl.appendChild(tile);
+    }
   }
 
   // ── Zahlen-Tabelle ─────────────────────────────────────────────────────────
@@ -134,6 +161,8 @@ export class LedgerScreen {
       { label: "· Bau", get: (p) => p.buildCost, fmt: euro, cls: "ledger-sub" },
       { label: "· Razzien", get: (p) => p.raidLoss, fmt: euro, cls: "ledger-sub" },
       { label: "· Bestechung", get: (p) => p.bribeCost, fmt: euro, cls: "ledger-sub" },
+      { label: "· Geldwäsche-Gebühr", get: (p) => p.launderFee, fmt: euro, cls: "ledger-sub" },
+      { label: "· Abgefangene Kuriere", get: (p) => p.interceptLoss, fmt: euro, cls: "ledger-sub" },
       { label: "Gewinn", get: ledgerProfit, fmt: (v) => `${v >= 0 ? "+" : ""}${v} €`, cls: "ledger-profit" },
       { label: "Geerntet", get: (p) => p.harvested },
       { label: "Getrocknet", get: (p) => p.dried },
