@@ -15,6 +15,8 @@ const passwordInput = document.getElementById("password-input") as HTMLInputElem
 const loginButton = document.getElementById("login-button") as HTMLButtonElement;
 const loginError = document.getElementById("login-error")!;
 const dashboard = document.getElementById("dashboard")!;
+const connection = document.getElementById("connection")!;
+const connectionText = document.getElementById("connection-text")!;
 const saveButton = document.getElementById("save-button") as HTMLButtonElement;
 const shutdownButton = document.getElementById("shutdown-button") as HTMLButtonElement;
 const actionMessage = document.getElementById("action-message")!;
@@ -97,17 +99,26 @@ function runAction(button: HTMLButtonElement, action: () => Promise<string>): vo
 function showDashboard(): void {
   loginForm.hidden = true;
   dashboard.hidden = false;
+  connection.hidden = false;
   if (pollTimer === null) {
     pollTimer = window.setInterval(() => {
       refreshStatus().catch(() => {
         // Server weg (z. B. nach Shutdown) — Anzeige behalten, nächster Poll versucht es erneut.
+        setConnected(false);
       });
     }, 2000);
   }
 }
 
+function setConnected(connected: boolean): void {
+  connection.classList.toggle("is-connected", connected);
+  connection.classList.toggle("is-disconnected", !connected);
+  connectionText.textContent = connected ? "Verbunden" : "Getrennt";
+}
+
 async function refreshStatus(): Promise<void> {
   const status = await api<AdminStatus>("/api/admin/status");
+  setConnected(true);
   stat.players.textContent =
     status.players.length > 0 ? status.players.map(escapeText).join(", ") : "niemand verbunden";
   stat.uptime.textContent = formatDuration(status.uptimeSeconds);

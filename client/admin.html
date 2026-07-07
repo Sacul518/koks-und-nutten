@@ -2,39 +2,79 @@
 <html lang="de">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
     <title>Koks und Nutten — Admin</title>
   </head>
   <body>
     <main id="admin">
-      <h1>Admin-Panel</h1>
+      <header id="admin-header">
+        <div id="admin-title">
+          <p id="admin-eyebrow">Koks und Nutten</p>
+          <h1>Admin-Panel</h1>
+        </div>
+        <div id="connection" hidden>
+          <span id="connection-dot" class="dot"></span>
+          <span id="connection-text">Verbunden</span>
+        </div>
+      </header>
 
       <form id="login-form">
-        <input
-          id="password-input"
-          type="password"
-          placeholder="Admin-Passwort"
-          autocomplete="current-password"
-        />
+        <div class="field">
+          <label for="password-input">Admin-Passwort</label>
+          <input
+            id="password-input"
+            type="password"
+            placeholder="••••••••"
+            autocomplete="current-password"
+          />
+        </div>
         <button id="login-button" type="submit">Anmelden</button>
-        <p id="login-error"></p>
+        <p id="login-error" role="alert"></p>
       </form>
 
       <section id="dashboard" hidden>
         <dl id="status-grid">
-          <div><dt>Spieler</dt><dd id="stat-players">–</dd></div>
-          <div><dt>Uptime</dt><dd id="stat-uptime">–</dd></div>
-          <div><dt>Ticks/s</dt><dd id="stat-ticks">–</dd></div>
-          <div><dt>Letzter Save</dt><dd id="stat-save">–</dd></div>
-          <div><dt>Karten-Seed</dt><dd id="stat-seed">–</dd></div>
-          <div><dt>Shutdown</dt><dd id="stat-shutdown">–</dd></div>
+          <div class="stat-card stat-card--wide">
+            <dt>Spieler</dt>
+            <dd id="stat-players">–</dd>
+          </div>
+          <div class="stat-card">
+            <dt>Uptime</dt>
+            <dd id="stat-uptime">–</dd>
+          </div>
+          <div class="stat-card">
+            <dt>Ticks/s</dt>
+            <dd id="stat-ticks">–</dd>
+          </div>
+          <div class="stat-card">
+            <dt>Letzter Save</dt>
+            <dd id="stat-save">–</dd>
+          </div>
+          <div class="stat-card">
+            <dt>Karten-Seed</dt>
+            <dd id="stat-seed">–</dd>
+          </div>
+          <div class="stat-card">
+            <dt>Shutdown-Modus</dt>
+            <dd id="stat-shutdown">–</dd>
+          </div>
         </dl>
 
         <div id="actions">
           <button id="save-button" type="button">Jetzt speichern</button>
-          <button id="shutdown-button" type="button" class="danger">Speichern &amp; Pi herunterfahren</button>
+
+          <div id="danger-zone">
+            <p id="danger-zone-label">Gefahrenzone</p>
+            <button id="shutdown-button" type="button" class="danger">
+              Speichern &amp; Pi herunterfahren
+            </button>
+          </div>
         </div>
-        <p id="action-message"></p>
+        <p id="action-message" role="status"></p>
       </section>
     </main>
 
