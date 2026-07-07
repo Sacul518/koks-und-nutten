@@ -57,3 +57,19 @@ Autor für alle Packs: **Kenney (www.kenney.nl)**.
 - `Fonts/` — 12 TTF-Fonts, u. a. **Kenney Pixel** (reiner Pixel-Font, gut für
   UI/HUD-Text) und **Kenney Mini**/**Kenney Mini Square** (sehr kompakt, gut für
   kleine Labels). Lizenz CC0 (bei Fonts unüblich, aber von Kenney bestätigt).
+
+### icons/ (selbst erstellt)
+- `samen.png`, `pflanze.png`, `ernte.png`, `weed.png`, `baggie.png`,
+  `geld-sauber.png`, `geld-schmutzig.png`, `heat.png`, `meth.png`, `arbeiter.png`
+  — je 16×16px, transparenter Hintergrund. Prozedural per Python-Skript
+  (reine Stdlib, kein PIL) im Kenney-16×16-Stil erzeugt (kräftige Flächenfarben,
+  1px dunkle Umrandung). Keine Kenney-Bilddaten kopiert, nur der Stil ist
+  angelehnt. Lizenz **CC0** (eigenes Werk, wie der Rest des Projekts).
+
+### police/ (selbst erstellt, Farb-Reskin)
+- `police.png` — 64×48px (3 Zeilen × 4 Spalten à 16×16), gleiches Layout wie
+  ein Charakter-Set in `kenney-rpg-urban/tilemap_packed.png`. Basis war das dort
+  ungenutzte Charakter-Set ab Zeile 12; Hemd/Hose per Farb-Remapping auf
+  Polizeiblau umgefärbt, Hauttöne/Outline unverändert aus dem Original
+  übernommen, Abzeichen-Andeutung ergänzt. Details in `police/README.md`.
+  Lizenz **CC0** (abgeleitetes Werk von Kenneys CC0-Originalmaterial).
