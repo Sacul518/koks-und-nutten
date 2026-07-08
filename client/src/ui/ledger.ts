@@ -2,6 +2,7 @@ import {
   BRIBE_COST_PER_PERIOD,
   BUILDING_SPECS,
   DISTRICT_GRID,
+  LABOR_UNLOCK_PROFIT,
   LEDGER_PERIOD_S,
   WORKER_SPECS,
   ledgerExpenses,
@@ -27,6 +28,8 @@ interface SnapshotData {
   buildings: BuildingSnapshot[];
   me: PlayerSnapshot | undefined;
   districts: DistrictSnapshot[];
+  /** M6: Team-weiter Gewinn seit Spielbeginn — bestimmt die Labor-Freischaltung. */
+  lifetimeProfit: number;
 }
 
 /**
@@ -94,9 +97,15 @@ export class LedgerScreen {
 
   private render(): void {
     if (!this.latest) return;
-    const { ledger } = this.latest;
+    const { ledger, lifetimeProfit } = this.latest;
     const remaining = Math.max(0, Math.round(LEDGER_PERIOD_S - ledger.elapsedS));
-    this.periodEl.textContent = `Periode #${ledger.n} · endet in ${remaining} s · Team-weit`;
+    const laborStatus =
+      lifetimeProfit >= LABOR_UNLOCK_PROFIT
+        ? "Labor freigeschaltet"
+        : `Labor ab ${LABOR_UNLOCK_PROFIT} € (noch ${Math.ceil(LABOR_UNLOCK_PROFIT - lifetimeProfit)} €)`;
+    this.periodEl.textContent =
+      `Periode #${ledger.n} · endet in ${remaining} s · Team-weit · ` +
+      `Lebenszeit-Gewinn: ${Math.round(lifetimeProfit)} € · ${laborStatus}`;
     this.renderTable(ledger);
     this.renderChart(ledger);
     this.renderBribe();
@@ -163,6 +172,8 @@ export class LedgerScreen {
       { label: "· Bestechung", get: (p) => p.bribeCost, fmt: euro, cls: "ledger-sub" },
       { label: "· Geldwäsche-Gebühr", get: (p) => p.launderFee, fmt: euro, cls: "ledger-sub" },
       { label: "· Abgefangene Kuriere", get: (p) => p.interceptLoss, fmt: euro, cls: "ledger-sub" },
+      { label: "· Chemikalien", get: (p) => p.chemicalCost, fmt: euro, cls: "ledger-sub" },
+      { label: "· Random Events", get: (p) => p.eventLoss, fmt: euro, cls: "ledger-sub" },
       { label: "Gewinn", get: ledgerProfit, fmt: (v) => `${v >= 0 ? "+" : ""}${v} €`, cls: "ledger-profit" },
       { label: "Geerntet", get: (p) => p.harvested },
       { label: "Getrocknet", get: (p) => p.dried },

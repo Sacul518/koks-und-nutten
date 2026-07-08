@@ -1,14 +1,23 @@
 import {
   BAGGIES_PER_DRIED,
+  BAGGIE_PRICE_BASE,
   BRIBE_COST_PER_PERIOD,
   BRIBE_GAIN_MULT,
   BUILDING_SPECS,
+  CHEMICAL_PRICE,
   CONTROL_DECAY_PER_S,
+  COOK_TIME_S,
+  CRACKDOWN_DURATION_S,
+  CRACKDOWN_MULTIPLIER,
   DEALER_CAPACITY,
   DEALER_SELL_TIME_S,
+  DELIVERY_LOSS_MAX_FRACTION,
+  DELIVERY_LOSS_MIN_FRACTION,
   DISTRICT_GRID,
   DRY_CAPACITY,
   DRY_TIME_S,
+  EVENT_INTERVAL_MAX_S,
+  EVENT_INTERVAL_MIN_S,
   GROWBOX_STORE_MAX,
   GROW_TIME_S,
   HARVEST_YIELD,
@@ -18,6 +27,8 @@ import {
   INTERACT_RANGE,
   INTERCEPT_CHANCE_PER_S_AT_ZERO_CONTROL,
   KURIER_CAPACITY,
+  LABOR_STORE_MAX,
+  LABOR_UNLOCK_PROFIT,
   LAUNDER_SPECS,
   LEDGER_HISTORY_MAX,
   LEDGER_PERIOD_S,
@@ -25,16 +36,23 @@ import {
   MAP_WIDTH,
   MAX_NAME_LENGTH,
   MAX_PLAYERS,
+  METH_BAGGIE_PRICE_BASE,
+  METH_HEAT_PER_SALE,
+  METH_YIELD,
   NPC_BUY_COOLDOWN_S,
   NPC_COUNT,
   NPC_WALK_SPEED,
   PACK_QUEUE_MAX,
   PACK_TIME_S,
+  PRICE_SWING_DURATION_S,
+  PRICE_SWING_MAX,
+  PRICE_SWING_MIN,
   RAID_CHANCE_AT_MAX_HEAT,
   RAID_CHECK_INTERVAL_S,
   RAID_VALUE_PER_BAGGIE,
   RAID_VALUE_PER_DRIED,
   RAID_VALUE_PER_HARVEST,
+  RAID_VALUE_PER_METH_STORE,
   RIVAL_SELL_INTERVAL_S,
   SEED_PRICE,
   SELL_RANGE,
@@ -46,7 +64,6 @@ import {
   WALK_SPEED,
   WORKER_SPECS,
   WORKER_WALK_SPEED,
-  baggiePriceWithControl,
   districtIdAt,
   districtPoliceMultipliers,
   districtPriceFactors,
@@ -57,6 +74,8 @@ import {
   generateCity,
   isLaunderKind,
   isWalkable,
+  ledgerProfit,
+  priceFromFactor,
   tileAt,
   type BuildingKind,
   type BuildingSnapshot,
@@ -64,6 +83,8 @@ import {
   type ClientMessage,
   type Direction,
   type DistrictSnapshot,
+  type DrugKind,
+  type EventKind,
   type Inventory,
   type LedgerPeriod,
   type NpcSnapshot,
@@ -140,6 +161,8 @@ export interface SavedLedger {
   elapsedS: number;
   current: LedgerPeriod;
   history: LedgerPeriod[];
+  /** M6: Team-weiter Gewinn seit Spielbeginn — bestimmt Freischaltungen (z. B. Labor). */
+  lifetimeProfit: number;
 }
 
 interface Worker extends SavedWorker {
@@ -231,6 +254,17 @@ export class Game {
   private ledger: LedgerPeriod;
   private ledgerElapsedS: number;
   private ledgerHistoryArr: LedgerPeriod[];
+  /** M6: Team-weiter Gewinn seit Spielbeginn — bestimmt Freischaltungen (z. B. Labor). */
+  private lifetimeProfit: number;
+  /** M6: Timer bis zum nächsten Random Event, läuft mit prodDt. */
+  private eventTimer: number;
+  /**
+   * M6: Aktive Preisschwankungen/Polizei-Schwerpunktaktionen je Distrikt.
+   * Bewusst nicht persistiert (wie raidTimers/die M5-EMAs): nach einem Neustart
+   * sind einfach keine Events mehr aktiv, das ist gewollt.
+   */
+  private readonly activeSwings = new Map<number, { multiplier: number; remainingS: number }>();
+  private readonly activeCrackdowns = new Map<number, { multiplier: number; remainingS: number }>();
 
   constructor(
     seed: number,
@@ -266,6 +300,8 @@ export class Game {
     this.ledger = savedLedger ? { ...savedLedger.current } : emptyLedgerPeriod(1);
     this.ledgerElapsedS = savedLedger ? savedLedger.elapsedS : 0;
     this.ledgerHistoryArr = savedLedger ? savedLedger.history.map((p) => ({ ...p })) : [];
+    this.lifetimeProfit = savedLedger?.lifetimeProfit ?? 0;
+    this.eventTimer = EVENT_INTERVAL_MIN_S + Math.random() * (EVENT_INTERVAL_MAX_S - EVENT_INTERVAL_MIN_S);
     this.spawnNpcs();
   }
 
@@ -317,7 +353,7 @@ export class Game {
       input: { dx: 0, dy: 0 },
       moneyClean: saved ? saved.moneyClean : START_MONEY_CLEAN,
       moneyDirty: saved ? saved.moneyDirty : START_MONEY_DIRTY,
-      inv: saved ? { ...saved.inv } : { seeds: 0, harvest: 0, dried: 0, baggies: 0 },
+      inv: saved ? { ...saved.inv } : { seeds: 0, harvest: 0, dried: 0, baggies: 0, chemicals: 0, methBaggies: 0 },
       heat: saved ? saved.heat : 0,
       bribing: saved ? saved.bribing : false,
       send,
@@ -367,7 +403,7 @@ export class Game {
         this.handleBuildingAction(player, msg.t, msg.buildingId);
         break;
       case "sell":
-        this.handleSell(player, msg.npcId);
+        this.handleSell(player, msg.npcId, msg.drug);
         break;
       case "hire":
         this.handleHire(player, msg.kind, msg.buildingId, msg.targetBuildingId ?? null, msg.district ?? null);
@@ -380,6 +416,9 @@ export class Game {
         break;
       case "launder":
         this.handleLaunder(player, msg.buildingId, msg.amount);
+        break;
+      case "buyChemicals":
+        this.handleBuyChemicals(player, msg.buildingId, msg.count);
         break;
       case "join":
         break;
@@ -441,6 +480,13 @@ export class Game {
         case "waschsalon":
         case "bar":
           return { ...base, kind: b.kind, queued: Math.round(b.launderQueue * 100) / 100 };
+        case "labor":
+          return {
+            ...base,
+            kind: "labor" as const,
+            cook: b.plantProgress === null ? null : pct(b.plantProgress),
+            store: b.harvestStore,
+          };
       }
     });
   }
@@ -487,6 +533,7 @@ export class Game {
       elapsedS: Math.round(this.ledgerElapsedS * 10) / 10,
       current: { ...this.ledger },
       history: this.ledgerHistoryArr.map((p) => ({ ...p })),
+      lifetimeProfit: Math.round(this.lifetimeProfit * 100) / 100,
     };
   }
 
@@ -530,6 +577,12 @@ export class Game {
 
   private handleBuild(player: GamePlayer, kind: BuildingKind, x: number, y: number): void {
     const spec = BUILDING_SPECS[kind];
+    if (kind === "labor" && this.lifetimeProfit < LABOR_UNLOCK_PROFIT) {
+      return this.fail(
+        player,
+        `Das Labor schaltet sich erst ab ${LABOR_UNLOCK_PROFIT} € Lebenszeit-Gewinn frei (aktuell ${Math.floor(this.lifetimeProfit)} €).`,
+      );
+    }
     if (x < 0 || y < 0 || x + spec.w > MAP_WIDTH || y + spec.h > MAP_HEIGHT) {
       return this.fail(player, "Außerhalb der Karte.");
     }
@@ -609,6 +662,19 @@ export class Game {
     player.inv.seeds += count;
   }
 
+  /** M6: Chemikalien fürs Labor kaufen — Pendant zu handleBuySeeds. */
+  private handleBuyChemicals(player: GamePlayer, buildingId: string, count: number): void {
+    const b = this.usableBuilding(player, buildingId, "labor");
+    if (typeof b === "string") return this.fail(player, b);
+    const cost = count * CHEMICAL_PRICE;
+    if (player.moneyClean + player.moneyDirty < cost) {
+      return this.fail(player, `Zu wenig Geld (${cost} € nötig).`);
+    }
+    this.spend(player, cost);
+    this.ledger.chemicalCost += cost;
+    player.inv.chemicals += count;
+  }
+
   private handleBuildingAction(
     player: GamePlayer,
     action: "plant" | "harvest" | "store" | "pack" | "collect",
@@ -619,7 +685,14 @@ export class Game {
 
     switch (action) {
       case "plant": {
-        if (b.kind !== "growbox") return this.fail(player, "Pflanzen geht nur in der Growbox.");
+        if (b.kind === "labor") {
+          if (b.plantProgress !== null) return this.fail(player, "Hier kocht schon eine Charge.");
+          if (player.inv.chemicals < 1) return this.fail(player, "Keine Chemikalien dabei.");
+          player.inv.chemicals--;
+          b.plantProgress = 0;
+          return;
+        }
+        if (b.kind !== "growbox") return this.fail(player, "Pflanzen geht nur in der Growbox oder im Labor.");
         if (b.plantProgress !== null) return this.fail(player, "Hier wächst schon eine Pflanze.");
         if (player.inv.seeds < 1) return this.fail(player, "Keine Samen dabei.");
         player.inv.seeds--;
@@ -627,7 +700,15 @@ export class Game {
         return;
       }
       case "harvest": {
-        if (b.kind !== "growbox") return this.fail(player, "Ernten geht nur an der Growbox.");
+        if (b.kind === "labor") {
+          if (b.plantProgress === null) return this.fail(player, "Hier kocht nichts.");
+          if (b.plantProgress < 1) return this.fail(player, "Die Charge ist noch nicht fertig.");
+          if (b.harvestStore + METH_YIELD > LABOR_STORE_MAX) return this.fail(player, "Das Lager ist voll.");
+          b.plantProgress = null;
+          b.harvestStore += METH_YIELD;
+          return;
+        }
+        if (b.kind !== "growbox") return this.fail(player, "Ernten geht nur an der Growbox oder im Labor.");
         if (b.plantProgress === null) return this.fail(player, "Hier wächst nichts.");
         if (b.plantProgress < 1) return this.fail(player, "Die Pflanze ist noch nicht reif.");
         b.plantProgress = null;
@@ -674,32 +755,41 @@ export class Game {
           b.baggies = 0;
           return;
         }
+        if (b.kind === "labor") {
+          if (b.harvestStore < 1) return this.fail(player, "Noch nichts fertig gekocht.");
+          player.inv.methBaggies += b.harvestStore;
+          b.harvestStore = 0;
+          return;
+        }
         return this.fail(player, "Hier gibt es nichts zu entnehmen.");
       }
     }
   }
 
-  private handleSell(player: GamePlayer, npcId: string): void {
+  private handleSell(player: GamePlayer, npcId: string, drug: DrugKind): void {
     const npc = this.npcs.get(npcId);
     if (!npc) return this.fail(player, "Passant nicht gefunden.");
     if (Math.hypot(npc.x - player.x, npc.y - player.y) > SELL_RANGE) {
       return this.fail(player, "Zu weit weg.");
     }
     if (npc.cooldownS > 0) return this.fail(player, "Dieser Passant hat gerade erst gekauft.");
-    if (player.inv.baggies < 1) return this.fail(player, "Keine Baggies dabei.");
+    const carried = drug === "meth" ? player.inv.methBaggies : player.inv.baggies;
+    if (carried < 1) return this.fail(player, drug === "meth" ? "Kein Meth dabei." : "Keine Baggies dabei.");
 
     const district = districtIdAt(Math.floor(npc.x), Math.floor(npc.y));
-    const price = this.priceAt(npc.x, npc.y);
-    player.inv.baggies--;
+    const price = this.priceAt(npc.x, npc.y, drug);
+    if (drug === "meth") player.inv.methBaggies--;
+    else player.inv.baggies--;
     player.moneyDirty += price;
     npc.cooldownS = NPC_BUY_COOLDOWN_S;
     this.ledger.income += price;
     this.ledger.sales++;
     player.send({ t: "sold", price });
     this.districtPlayerSalesEma[district]! += 1;
+    const heatPerSale = drug === "meth" ? METH_HEAT_PER_SALE : HEAT_PER_SALE;
     this.addHeatByName(
       player.name,
-      HEAT_PER_SALE * (player.bribing ? BRIBE_GAIN_MULT : 1) * this.policeMultipliers[district]!,
+      heatPerSale * (player.bribing ? BRIBE_GAIN_MULT : 1) * this.effectivePoliceMultiplier(district),
     );
   }
 
@@ -925,6 +1015,7 @@ export class Game {
     this.tickHeat(prodDt);
     this.tickRaids(prodDt);
     this.tickDistrictControl(prodDt);
+    this.tickEvents(prodDt);
     this.tickLedger(prodDt);
     if (this.players.size > 0) {
       this.broadcast({
@@ -935,6 +1026,7 @@ export class Game {
         workers: this.workerSnapshot(),
         ledger: { ...this.ledger, elapsedS: Math.round(this.ledgerElapsedS * 10) / 10 },
         districts: this.districtSnapshot(),
+        lifetimeProfit: Math.round(this.lifetimeProfit * 100) / 100,
       });
     }
   }
@@ -945,6 +1037,7 @@ export class Game {
     this.ledgerElapsedS += prodDt;
     if (this.ledgerElapsedS < LEDGER_PERIOD_S) return;
     this.ledgerElapsedS -= LEDGER_PERIOD_S;
+    this.lifetimeProfit += ledgerProfit(this.ledger);
     this.ledgerHistoryArr.push(this.ledger);
     if (this.ledgerHistoryArr.length > LEDGER_HISTORY_MAX) this.ledgerHistoryArr.shift();
     this.ledger = emptyLedgerPeriod(this.ledger.n + 1);
@@ -1058,19 +1151,140 @@ export class Game {
     return (p + EPS) / (p + r + 2 * EPS);
   }
 
-  /** Baggie-Verkaufspreis an einer Position inkl. Revierkontrolle. */
-  private priceAt(x: number, y: number): number {
-    return baggiePriceWithControl(this.priceFactors, this.controlAt(districtIdAt(Math.floor(x), Math.floor(y))), x, y);
+  /** Verkaufspreis (Weed oder Meth) an einer Position inkl. Revierkontrolle und aktiver Random Events. */
+  private priceAt(x: number, y: number, drug: DrugKind = "weed"): number {
+    const d = districtIdAt(Math.floor(x), Math.floor(y));
+    const base = drug === "meth" ? METH_BAGGIE_PRICE_BASE : BAGGIE_PRICE_BASE;
+    return priceFromFactor(this.effectivePriceFactor(d), this.controlAt(d), base);
+  }
+
+  /** M6: Seed-Preisfaktor eines Distrikts, multipliziert mit einer evtl. aktiven Preisschwankung. */
+  private effectivePriceFactor(d: number): number {
+    const swing = this.activeSwings.get(d);
+    return this.priceFactors[d]! * (swing ? swing.multiplier : 1);
+  }
+
+  /** M6: Seed-Polizeifaktor eines Distrikts, multipliziert mit einer evtl. aktiven Schwerpunktaktion. */
+  private effectivePoliceMultiplier(d: number): number {
+    const crackdown = this.activeCrackdowns.get(d);
+    return this.policeMultipliers[d]! * (crackdown ? crackdown.multiplier : 1);
   }
 
   districtSnapshot(): DistrictSnapshot[] {
-    return this.priceFactors.map((priceFactor, d) => ({
+    return this.priceFactors.map((_, d) => ({
       id: d,
       control: Math.round(this.controlAt(d) * 1000) / 1000,
-      priceFactor,
-      policeMultiplier: this.policeMultipliers[d]!,
+      priceFactor: this.effectivePriceFactor(d),
+      policeMultiplier: this.effectivePoliceMultiplier(d),
       rivalStrength: this.rivalStrength[d]!,
     }));
+  }
+
+  // ── M6: Random Events ──────────────────────────────────────────────────────
+
+  private tickEvents(prodDt: number): void {
+    for (const [d, s] of this.activeSwings) {
+      s.remainingS -= prodDt;
+      if (s.remainingS <= 0) this.activeSwings.delete(d);
+    }
+    for (const [d, c] of this.activeCrackdowns) {
+      c.remainingS -= prodDt;
+      if (c.remainingS <= 0) this.activeCrackdowns.delete(d);
+    }
+    this.eventTimer -= prodDt;
+    if (this.eventTimer > 0) return;
+    this.eventTimer = EVENT_INTERVAL_MIN_S + Math.random() * (EVENT_INTERVAL_MAX_S - EVENT_INTERVAL_MIN_S);
+    this.triggerRandomEvent();
+  }
+
+  private triggerRandomEvent(): void {
+    const kinds: EventKind[] = ["priceSwing", "crackdown", "delivery"];
+    const kind = kinds[Math.floor(Math.random() * kinds.length)]!;
+    switch (kind) {
+      case "priceSwing": {
+        const d = Math.floor(Math.random() * this.priceFactors.length);
+        const multiplier =
+          Math.round((PRICE_SWING_MIN + Math.random() * (PRICE_SWING_MAX - PRICE_SWING_MIN)) * 100) / 100;
+        this.activeSwings.set(d, { multiplier, remainingS: PRICE_SWING_DURATION_S });
+        const direction = multiplier >= 1 ? "steigen" : "fallen";
+        this.broadcast({
+          t: "event",
+          kind,
+          text: `Preisschwankung in Revier ${d + 1}: Preise ${direction} kurzzeitig (×${multiplier}).`,
+        });
+        break;
+      }
+      case "crackdown": {
+        const d = Math.floor(Math.random() * this.priceFactors.length);
+        this.activeCrackdowns.set(d, { multiplier: CRACKDOWN_MULTIPLIER, remainingS: CRACKDOWN_DURATION_S });
+        this.broadcast({
+          t: "event",
+          kind,
+          text: `Polizei-Schwerpunktaktion in Revier ${d + 1} — Fahndungsdruck steigt dort deutlich schneller.`,
+        });
+        break;
+      }
+      case "delivery": {
+        const candidates = [...this.buildings.values()].filter((b) => this.eventLossPotential(b) > 0);
+        if (candidates.length === 0) break;
+        const b = candidates[Math.floor(Math.random() * candidates.length)]!;
+        const lossValue = this.applyDeliveryLoss(b);
+        if (lossValue > 0) {
+          this.ledger.eventLoss += lossValue;
+          this.broadcast({
+            t: "event",
+            kind,
+            text: `Abgefangene Lieferung bei ${b.owner}s ${BUILDING_SPECS[b.kind].name} — Warenverlust ${Math.round(lossValue)} €.`,
+          });
+        }
+        break;
+      }
+    }
+  }
+
+  /** Menge des Lagerbestands, den eine "abgefangene Lieferung" bei diesem Gebäude treffen könnte. */
+  private eventLossPotential(b: SavedBuilding): number {
+    switch (b.kind) {
+      case "growbox":
+        return b.harvestStore;
+      case "trockenraum":
+        return b.dried;
+      case "packtisch":
+        return b.baggies;
+      case "labor":
+        return b.harvestStore;
+      default:
+        return 0;
+    }
+  }
+
+  /** Vernichtet einen zufälligen Anteil des Lagerbestands und liefert den Geldwert des Verlusts. */
+  private applyDeliveryLoss(b: SavedBuilding): number {
+    const fraction = DELIVERY_LOSS_MIN_FRACTION + Math.random() * (DELIVERY_LOSS_MAX_FRACTION - DELIVERY_LOSS_MIN_FRACTION);
+    switch (b.kind) {
+      case "growbox": {
+        const lost = Math.ceil(b.harvestStore * fraction);
+        b.harvestStore -= lost;
+        return lost * RAID_VALUE_PER_HARVEST;
+      }
+      case "trockenraum": {
+        const lost = Math.ceil(b.dried * fraction);
+        b.dried -= lost;
+        return lost * RAID_VALUE_PER_DRIED;
+      }
+      case "packtisch": {
+        const lost = Math.ceil(b.baggies * fraction);
+        b.baggies -= lost;
+        return lost * RAID_VALUE_PER_BAGGIE;
+      }
+      case "labor": {
+        const lost = Math.ceil(b.harvestStore * fraction);
+        b.harvestStore -= lost;
+        return lost * RAID_VALUE_PER_METH_STORE;
+      }
+      default:
+        return 0;
+    }
   }
 
   private tickBuilding(b: SavedBuilding, dt: number): void {
@@ -1078,6 +1292,11 @@ export class Game {
       case "growbox":
         if (b.plantProgress !== null && b.plantProgress < 1) {
           b.plantProgress = Math.min(1, b.plantProgress + dt / GROW_TIME_S);
+        }
+        break;
+      case "labor":
+        if (b.plantProgress !== null && b.plantProgress < 1) {
+          b.plantProgress = Math.min(1, b.plantProgress + dt / COOK_TIME_S);
         }
         break;
       case "trockenraum":
@@ -1322,7 +1541,7 @@ export class Game {
           this.districtPlayerSalesEma[district]! += 1;
           this.addHeatByName(
             w.owner,
-            HEAT_PER_SALE * (this.isBribing(w.owner) ? BRIBE_GAIN_MULT : 1) * this.policeMultipliers[district]!,
+            HEAT_PER_SALE * (this.isBribing(w.owner) ? BRIBE_GAIN_MULT : 1) * this.effectivePoliceMultiplier(district),
           );
           w.targetNpcId = null;
         }

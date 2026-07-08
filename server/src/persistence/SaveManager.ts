@@ -12,7 +12,7 @@ import {
 import type { SavedBuilding, SavedLedger, SavedPlayer, SavedWorker } from "../game/Game.ts";
 
 /** Bei Format-Änderungen hochzählen und in migrate() einen Schritt ergänzen. */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 export const AUTOSAVE_INTERVAL_MS = 5 * 60_000;
 
@@ -94,7 +94,7 @@ export class SaveManager {
 }
 
 function emptyLedger(): SavedLedger {
-  return { elapsedS: 0, current: emptyLedgerPeriod(1), history: [] };
+  return { elapsedS: 0, current: emptyLedgerPeriod(1), history: [], lifetimeProfit: 0 };
 }
 
 function validateSave(data: unknown): SaveGame {
@@ -183,6 +183,28 @@ function migrate(d: Record<string, unknown>): Record<string, unknown> {
     }
     d.saveVersion = 5;
   }
+  if (d.saveVersion === 5) {
+    // v5 → v6: Meth-Kette (Chemikalien/Meth-Baggies im Inventar), Chemie-/Event-Verluste im Ledger,
+    // Lebenszeit-Gewinn fürs Labor-Freischalten. Gebäude brauchen keine neuen Felder (Labor nutzt
+    // plantProgress/harvestStore wie die Growbox).
+    d.players = (Array.isArray(d.players) ? d.players : []).map((p) => {
+      const player = p as Record<string, unknown>;
+      const inv = (player.inv as Record<string, unknown> | undefined) ?? {};
+      return { ...player, inv: { chemicals: 0, methBaggies: 0, ...inv } };
+    });
+    const migrateLedgerPeriod = (p: unknown) => ({
+      chemicalCost: 0,
+      eventLoss: 0,
+      ...(p as Record<string, unknown>),
+    });
+    const ledger = d.ledger as Record<string, unknown> | undefined;
+    if (ledger && typeof ledger === "object") {
+      if (ledger.current) ledger.current = migrateLedgerPeriod(ledger.current);
+      if (Array.isArray(ledger.history)) ledger.history = ledger.history.map(migrateLedgerPeriod);
+      if (typeof ledger.lifetimeProfit !== "number") ledger.lifetimeProfit = 0;
+    }
+    d.saveVersion = 6;
+  }
   console.log(`[save] Spielstand von v${String(from)} auf v${String(d.saveVersion)} migriert`);
   return d;
 }
@@ -215,7 +237,9 @@ function isInventory(inv: unknown): inv is Inventory {
     typeof d.seeds === "number" &&
     typeof d.harvest === "number" &&
     typeof d.dried === "number" &&
-    typeof d.baggies === "number"
+    typeof d.baggies === "number" &&
+    typeof d.chemicals === "number" &&
+    typeof d.methBaggies === "number"
   );
 }
 
@@ -275,6 +299,8 @@ function isLedgerPeriod(p: unknown): p is LedgerPeriod {
     "bribeCost",
     "launderFee",
     "interceptLoss",
+    "chemicalCost",
+    "eventLoss",
   ].every((k) => typeof d[k] === "number");
 }
 
@@ -285,6 +311,7 @@ function isSavedLedger(l: unknown): l is SavedLedger {
     typeof d.elapsedS === "number" &&
     isLedgerPeriod(d.current) &&
     Array.isArray(d.history) &&
-    d.history.every(isLedgerPeriod)
+    d.history.every(isLedgerPeriod) &&
+    typeof d.lifetimeProfit === "number"
   );
 }

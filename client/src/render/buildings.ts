@@ -73,7 +73,8 @@ export class BuildingLayer {
       }
       case "packtisch":
       case "waschsalon":
-      case "bar": {
+      case "bar":
+      case "labor": {
         for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 2; tx++) put(tex.floor, tx, ty);
         put(tex.counter[0], 0, 0.7);
         put(tex.counter[1], 1, 0.7);
@@ -135,6 +136,15 @@ export class BuildingLayer {
       case "bar": {
         const name = BUILDING_SPECS[b.kind].name;
         rb.label.text = b.queued === 0 ? `${name} · leer` : `${name} · ${b.queued} € wartend`;
+        break;
+      }
+      case "labor": {
+        rb.label.text =
+          b.cook === null
+            ? `Labor · ${b.store} Meth`
+            : b.cook >= 1
+              ? "Labor · Charge fertig!"
+              : `Labor · kocht ${Math.round(b.cook * 100)} %`;
         break;
       }
     }

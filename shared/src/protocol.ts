@@ -1,10 +1,13 @@
 import { DISTRICT_GRID } from "./constants.ts";
 import {
   isBuildingKind,
+  isDrugKind,
   isWorkerKind,
   type BuildingKind,
   type BuildingSnapshot,
   type DistrictSnapshot,
+  type DrugKind,
+  type EventKind,
   type LedgerLive,
   type LedgerPeriod,
   type NpcSnapshot,
@@ -26,14 +29,16 @@ export type ClientMessage =
   | { t: "store"; buildingId: string }
   | { t: "pack"; buildingId: string }
   | { t: "collect"; buildingId: string }
-  | { t: "sell"; npcId: string }
+  | { t: "sell"; npcId: string; drug: DrugKind }
   // M3: Arbeiter
   | { t: "hire"; kind: WorkerKind; buildingId: string; targetBuildingId?: string; district?: number }
   | { t: "fire"; workerId: string }
   // M4: Bestechung
   | { t: "bribe"; on: boolean }
   // M5: Geldwäsche — schmutziges Geld in die Warteschlange einer Front geben
-  | { t: "launder"; buildingId: string; amount: number };
+  | { t: "launder"; buildingId: string; amount: number }
+  // M6: Chemikalien kaufen (Labor-Pendant zu buySeeds)
+  | { t: "buyChemicals"; buildingId: string; count: number };
 
 export type ServerMessage =
   | { t: "welcome"; id: string; seed: number; players: PlayerSnapshot[] }
@@ -46,8 +51,10 @@ export type ServerMessage =
       workers: WorkerSnapshot[];
       /** Laufende Ledger-Periode (Team-weit). */
       ledger: LedgerLive;
-      /** M5: Revierkontrolle + Preis-/Polizei-Kontext je Distrikt. */
+      /** M5: Revierkontrolle + Preis-/Polizei-Kontext je Distrikt (M6: priceFactor/policeMultiplier inkl. aktiver Random Events). */
       districts: DistrictSnapshot[];
+      /** M6: Team-weiter Gewinn seit Spielbeginn — bestimmt Freischaltungen (z. B. Labor). */
+      lifetimeProfit: number;
     }
   | { t: "playerLeft"; id: string }
   /** Abgeschlossene Perioden — beim Join und nach jedem Periodenwechsel. */
@@ -59,7 +66,9 @@ export type ServerMessage =
   /** M4: Razzia in einem eigenen Gebäude (nur an den Besitzer, falls online) */
   | { t: "raided"; buildingId: string; buildingKind: BuildingKind; lossValue: number }
   /** M5: Kurier in einem Fremdrevier abgefangen (nur an den Besitzer, falls online) */
-  | { t: "intercepted"; workerId: string; lossValue: number };
+  | { t: "intercepted"; workerId: string; lossValue: number }
+  /** M6: Random-Event-Ticker (Team-weit, an alle) */
+  | { t: "event"; kind: EventKind; text: string };
 
 export function parseClientMessage(raw: unknown): ClientMessage | null {
   if (typeof raw !== "string") return null;
@@ -116,7 +125,7 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
       }
       return null;
     case "sell":
-      if (typeof m.npcId === "string") return { t: "sell", npcId: m.npcId };
+      if (typeof m.npcId === "string" && isDrugKind(m.drug)) return { t: "sell", npcId: m.npcId, drug: m.drug };
       return null;
     case "hire": {
       if (!isWorkerKind(m.kind) || typeof m.buildingId !== "string") return null;
@@ -144,6 +153,17 @@ export function parseClientMessage(raw: unknown): ClientMessage | null {
         m.amount >= 1
       ) {
         return { t: "launder", buildingId: m.buildingId, amount: m.amount };
+      }
+      return null;
+    case "buyChemicals":
+      if (
+        typeof m.buildingId === "string" &&
+        typeof m.count === "number" &&
+        Number.isInteger(m.count) &&
+        m.count >= 1 &&
+        m.count <= 99
+      ) {
+        return { t: "buyChemicals", buildingId: m.buildingId, count: m.count };
       }
       return null;
     default:

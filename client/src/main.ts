@@ -138,7 +138,14 @@ async function startGame(name: string): Promise<void> {
     if (my) hud.update(my);
     panels.setDistricts(msg.districts);
     panels.refresh(msg.buildings, msg.npcs, msg.workers, my);
-    ledger.update({ ledger: msg.ledger, workers: msg.workers, buildings: msg.buildings, me: my, districts: msg.districts });
+    ledger.update({
+      ledger: msg.ledger,
+      workers: msg.workers,
+      buildings: msg.buildings,
+      me: my,
+      districts: msg.districts,
+      lifetimeProfit: msg.lifetimeProfit,
+    });
     buildMode.refresh();
     updatePlayerList(msg.players, welcome.id);
   };
@@ -149,6 +156,7 @@ async function startGame(name: string): Promise<void> {
     hud.toast(`Razzia im ${BUILDING_SPECS[buildingKind].name}: ${lossValue} € Warenverlust!`, "error");
   conn.onIntercepted = (_workerId, lossValue) =>
     hud.toast(`Kurier abgefangen: ${lossValue} € Warenverlust!`, "error");
+  conn.onEvent = (_kind, text) => hud.toast(text, "info");
   conn.onDisconnect = () => {
     started = false;
     panels.close();

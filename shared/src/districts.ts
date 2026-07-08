@@ -58,7 +58,22 @@ export function baggiePriceAt(factors: number[], x: number, y: number): number {
   return Math.round(BAGGIE_PRICE_BASE * factors[districtIdAt(x, y)]!);
 }
 
+/**
+ * M6: Verkaufspreis aus einem bereits aufgelösten Preisfaktor (z. B. dem `priceFactor` aus einem
+ * `DistrictSnapshot`, der schon Random-Event-Effekte enthält) plus Revierkontrolle und Basispreis
+ * der jeweiligen Droge. Die eigentliche Rechenlogik hinter `baggiePriceWithControl`.
+ */
+export function priceFromFactor(priceFactor: number, control: number, base: number = BAGGIE_PRICE_BASE): number {
+  return Math.round(base * priceFactor * controlPriceMultiplier(control));
+}
+
 /** M5: Verkaufspreis inkl. Revierkontrolle (Rivalen drücken den Preis, wo sie stark sind). */
-export function baggiePriceWithControl(factors: number[], control: number, x: number, y: number): number {
-  return Math.round(BAGGIE_PRICE_BASE * factors[districtIdAt(x, y)]! * controlPriceMultiplier(control));
+export function baggiePriceWithControl(
+  factors: number[],
+  control: number,
+  x: number,
+  y: number,
+  base: number = BAGGIE_PRICE_BASE,
+): number {
+  return priceFromFactor(factors[districtIdAt(x, y)]!, control, base);
 }

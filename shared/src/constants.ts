@@ -37,6 +37,7 @@ export const BUILDING_SPECS: Record<BuildingKind, BuildingSpec> = {
   packtisch: { name: "Packtisch", cost: 80, w: 2, h: 2 },
   waschsalon: { name: "Waschsalon", cost: 300, w: 2, h: 2 },
   bar: { name: "Bar", cost: 600, w: 2, h: 2 },
+  labor: { name: "Labor", cost: 400, w: 2, h: 2 },
 };
 
 /** Startgeld neuer Spieler (sauber; schmutziges Geld kommt nur aus Verkäufen). */
@@ -133,6 +134,43 @@ export const RAID_VALUE_PER_HARVEST = 5;
 export const BRIBE_COST_PER_PERIOD = 15;
 /** Bestechung: Faktor auf den Heat-Zuwachs pro Verkauf, solange aktiv (dämpft, ersetzt nicht). */
 export const BRIBE_GAIN_MULT = 0.4;
+
+// ── M6: Progression, Meth, Random Events (Balancing) ────────────────────────
+
+/** Lebenszeit-Team-Gewinn, ab dem das Labor (Meth-Kette) gebaut werden darf. */
+export const LABOR_UNLOCK_PROFIT = 3000;
+
+/** Preis pro Chemikalien-Einheit (Labor-Input) — teurer als Samen. */
+export const CHEMICAL_PRICE = 60;
+/** Kochzeit einer Charge in Sekunden (läuft mit TIME_SCALE, wie Wachstum). */
+export const COOK_TIME_S = 70;
+/** Meth-Baggies pro fertiger Charge. */
+export const METH_YIELD = 2;
+/** Maximale Einheiten im Labor-Zwischenlager (fertig, noch nicht entnommen). */
+export const LABOR_STORE_MAX = 8;
+/** Basispreis eines Meth-Baggies (deutlich höhere Marge als Weed). */
+export const METH_BAGGIE_PRICE_BASE = 45;
+/** Heat-Zuwachs pro verkauftem Meth-Baggie (deutlich höher als bei Weed). */
+export const METH_HEAT_PER_SALE = 10;
+/** Geldwert einer beschlagnahmten Labor-Lagereinheit (Random Events). */
+export const RAID_VALUE_PER_METH_STORE = 20;
+
+/** Abstand zwischen Random Events in Sekunden (läuft mit TIME_SCALE), zufällig in dieser Spanne. */
+export const EVENT_INTERVAL_MIN_S = 90;
+export const EVENT_INTERVAL_MAX_S = 180;
+
+/** Preisschwankung: Distrikt-Preisfaktor wird für die Dauer mit einem zufälligen Faktor in dieser Spanne multipliziert. */
+export const PRICE_SWING_MIN = 0.5;
+export const PRICE_SWING_MAX = 1.8;
+export const PRICE_SWING_DURATION_S = 90;
+
+/** Polizei-Schwerpunktaktion: Multiplikator auf den Distrikt-Polizeifaktor für die Dauer. */
+export const CRACKDOWN_MULTIPLIER = 2.2;
+export const CRACKDOWN_DURATION_S = 60;
+
+/** Abgefangene Lieferung: Anteil des Lagerbestands eines zufälligen Gebäudes, der verloren geht. */
+export const DELIVERY_LOSS_MIN_FRACTION = 0.3;
+export const DELIVERY_LOSS_MAX_FRACTION = 0.7;
 
 // ── M5: Reviere, Rivalen, Geldwäsche (Balancing) ────────────────────────────
 

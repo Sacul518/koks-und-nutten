@@ -2,6 +2,7 @@ import {
   PROTOCOL_VERSION,
   type BuildingKind,
   type ClientMessage,
+  type EventKind,
   type LedgerPeriod,
   type PlayerSnapshot,
   type ServerMessage,
@@ -23,6 +24,7 @@ export class Connection {
   onLedgerHistory: ((history: LedgerPeriod[]) => void) | null = null;
   onRaided: ((buildingId: string, buildingKind: BuildingKind, lossValue: number) => void) | null = null;
   onIntercepted: ((workerId: string, lossValue: number) => void) | null = null;
+  onEvent: ((kind: EventKind, text: string) => void) | null = null;
 
   join(name: string): Promise<JoinSuccess> {
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -65,6 +67,9 @@ export class Connection {
             break;
           case "intercepted":
             this.onIntercepted?.(msg.workerId, msg.lossValue);
+            break;
+          case "event":
+            this.onEvent?.(msg.kind, msg.text);
             break;
         }
       };

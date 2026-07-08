@@ -2,13 +2,17 @@ import { Container, Graphics, Sprite } from "pixi.js";
 import {
   BAGGIES_PER_DRIED,
   BUILDING_SPECS,
+  COOK_TIME_S,
   DRY_CAPACITY,
   DRY_TIME_S,
   GROW_TIME_S,
   HARVEST_YIELD,
+  LABOR_STORE_MAX,
+  LABOR_UNLOCK_PROFIT,
   LAUNDER_SPECS,
   MAP_HEIGHT,
   MAP_WIDTH,
+  METH_YIELD,
   PACK_TIME_S,
   TILE_SIZE,
   Tile,
@@ -37,6 +41,7 @@ const BUILDING_INFO: Record<BuildingKind, string> = {
   packtisch: `1 getrocknet → ${PACK_TIME_S} s → ${BAGGIES_PER_DRIED} Baggies`,
   waschsalon: `Wäscht Geld: ${LAUNDER_SPECS.waschsalon.ratePerS} €/s · ${Math.round(LAUNDER_SPECS.waschsalon.feePct * 100)} % Gebühr · max. ${LAUNDER_SPECS.waschsalon.queueMax} € Warteschlange`,
   bar: `Wäscht Geld: ${LAUNDER_SPECS.bar.ratePerS} €/s · ${Math.round(LAUNDER_SPECS.bar.feePct * 100)} % Gebühr · max. ${LAUNDER_SPECS.bar.queueMax} € Warteschlange`,
+  labor: `Ab ${LABOR_UNLOCK_PROFIT} € Lebenszeit-Gewinn · 1 Chemikalie → ${COOK_TIME_S} s → ${METH_YIELD} Meth · Lager ${LABOR_STORE_MAX}`,
 };
 
 /**
@@ -183,6 +188,7 @@ export class BuildMode {
       case "packtisch":
       case "waschsalon":
       case "bar":
+      case "labor":
         for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 2; tx++) put(tex.floor, tx, ty);
         put(tex.counter[0], 0, 0.7);
         put(tex.counter[1], 1, 0.7);

@@ -28,6 +28,8 @@ export class Hud {
     this.addStat(inv, "harvest", "ernte.png", "Ernte", "");
     this.addStat(inv, "dried", "weed.png", "Weed", "");
     this.addStat(inv, "baggies", "baggie.png", "Baggies", "");
+    this.addStat(inv, "chemicals", "chemikalien.png", "Chemikalien", "");
+    this.addStat(inv, "methBaggies", "meth.png", "Meth", "");
   }
 
   update(me: PlayerSnapshot): void {
@@ -38,9 +40,11 @@ export class Hud {
     this.setStat("harvest", me.inv.harvest);
     this.setStat("dried", me.inv.dried);
     this.setStat("baggies", me.inv.baggies);
+    this.setStat("chemicals", me.inv.chemicals);
+    this.setStat("methBaggies", me.inv.methBaggies);
   }
 
-  toast(text: string, kind: "ok" | "error"): void {
+  toast(text: string, kind: "ok" | "error" | "info"): void {
     this.toastEl.textContent = text;
     this.toastEl.className = kind;
     this.toastEl.hidden = false;

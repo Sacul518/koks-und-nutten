@@ -242,6 +242,10 @@ body {
   background: rgba(35, 110, 60, 0.92);
 }
 
+#toast.info {
+  background: rgba(45, 70, 130, 0.92);
+}
+
 #build-menu,
 #panel {
   position: absolute;

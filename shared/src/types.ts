@@ -25,6 +25,10 @@ export interface Inventory {
   harvest: number;
   dried: number;
   baggies: number;
+  /** M6: Labor-Input (Meth-Kette). */
+  chemicals: number;
+  /** M6: fertige, verkaufsfertige Meth-Baggies. */
+  methBaggies: number;
 }
 
 /** Geld von Anfang an getrennt: Verkaufserlöse = schmutzig, Startgeld = sauber. */
@@ -53,11 +57,16 @@ export interface PlayerSnapshot {
 
 // ── M2: Gebäude & Passanten ─────────────────────────────────────────────────
 
-export type BuildingKind = "growbox" | "trockenraum" | "packtisch" | "waschsalon" | "bar";
+export type BuildingKind = "growbox" | "trockenraum" | "packtisch" | "waschsalon" | "bar" | "labor";
 
 export function isBuildingKind(v: unknown): v is BuildingKind {
   return (
-    v === "growbox" || v === "trockenraum" || v === "packtisch" || v === "waschsalon" || v === "bar"
+    v === "growbox" ||
+    v === "trockenraum" ||
+    v === "packtisch" ||
+    v === "waschsalon" ||
+    v === "bar" ||
+    v === "labor"
   );
 }
 
@@ -78,7 +87,8 @@ export type BuildingSnapshot =
   | (BuildingBase & { kind: "growbox"; plant: number | null; store: number })
   | (BuildingBase & { kind: "trockenraum"; drying: number[]; dried: number })
   | (BuildingBase & { kind: "packtisch"; queue: number; packing: number | null; baggies: number })
-  | (BuildingBase & { kind: "waschsalon" | "bar"; queued: number });
+  | (BuildingBase & { kind: "waschsalon" | "bar"; queued: number })
+  | (BuildingBase & { kind: "labor"; cook: number | null; store: number });
 
 export interface NpcSnapshot {
   id: string;
@@ -105,6 +115,23 @@ export interface DistrictSnapshot {
   policeMultiplier: number;
   /** Seed-bestimmte Grundstärke der Rivalen-Gang (Kontext für die Revierkarte). */
   rivalStrength: number;
+}
+
+// ── M6: Progression, Meth, Random Events ────────────────────────────────────
+
+/** Verkaufte Drogenart — bestimmt Basispreis und Heat-Zuwachs beim Verkauf. */
+export type DrugKind = "weed" | "meth";
+
+export function isDrugKind(v: unknown): v is DrugKind {
+  return v === "weed" || v === "meth";
+}
+
+export type EventKind = "priceSwing" | "crackdown" | "delivery";
+
+/** Ticker-Meldung eines Random Events — Zahleneffekt steckt in districts/ledger, hier nur der Text. */
+export interface GameEvent {
+  kind: EventKind;
+  text: string;
 }
 
 // ── M3: Arbeiter & Ledger ───────────────────────────────────────────────────
@@ -161,6 +188,10 @@ export interface LedgerPeriod {
   launderFee: number;
   /** M5: Warenverlust durch abgefangene Kuriere in Fremdrevieren (€). */
   interceptLoss: number;
+  /** M6: Chemikalien-Einkauf fürs Labor (€). */
+  chemicalCost: number;
+  /** M6: Warenverlust durch Random Events ("abgefangene Lieferung", €). */
+  eventLoss: number;
 }
 
 /** Laufende Periode im Snapshot: zusätzlich der Zeitfortschritt. */
@@ -183,11 +214,23 @@ export function emptyLedgerPeriod(n: number): LedgerPeriod {
     bribeCost: 0,
     launderFee: 0,
     interceptLoss: 0,
+    chemicalCost: 0,
+    eventLoss: 0,
   };
 }
 
 export function ledgerExpenses(p: LedgerPeriod): number {
-  return p.seedCost + p.wageCost + p.buildCost + p.raidLoss + p.bribeCost + p.launderFee + p.interceptLoss;
+  return (
+    p.seedCost +
+    p.wageCost +
+    p.buildCost +
+    p.raidLoss +
+    p.bribeCost +
+    p.launderFee +
+    p.interceptLoss +
+    p.chemicalCost +
+    p.eventLoss
+  );
 }
 
 export function ledgerProfit(p: LedgerPeriod): number {

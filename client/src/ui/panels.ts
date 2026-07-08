@@ -1,17 +1,23 @@
 import {
+  BAGGIE_PRICE_BASE,
   BAGGIES_PER_DRIED,
+  CHEMICAL_PRICE,
+  COOK_TIME_S,
   DISTRICT_GRID,
   DRY_CAPACITY,
   DRY_TIME_S,
   GROW_TIME_S,
   HARVEST_YIELD,
+  LABOR_STORE_MAX,
   LAUNDER_SPECS,
+  METH_BAGGIE_PRICE_BASE,
+  METH_YIELD,
   PACK_QUEUE_MAX,
   PACK_TIME_S,
   SEED_PRICE,
   WORKER_SPECS,
-  baggiePriceWithControl,
   districtIdAt,
+  priceFromFactor,
   type BuildingSnapshot,
   type ClientMessage,
   type DistrictSnapshot,
@@ -118,6 +124,31 @@ export class Panels {
           this.addLaunderButton(b, 200);
           this.addLaunderButton(b, 1000);
           break;
+        case "labor":
+          this.addButton(
+            `1 Chemikalie kaufen (${CHEMICAL_PRICE} €)`,
+            { t: "buyChemicals", buildingId: b.id, count: 1 },
+            (_, p) => money(p) >= CHEMICAL_PRICE,
+          );
+          this.addButton(
+            `5 Chemikalien kaufen (${5 * CHEMICAL_PRICE} €)`,
+            { t: "buyChemicals", buildingId: b.id, count: 5 },
+            (_, p) => money(p) >= 5 * CHEMICAL_PRICE,
+          );
+          this.addButton("Charge kochen (1 Chemikalie)", { t: "plant", buildingId: b.id }, (eb, p) =>
+            "kind" in eb && eb.kind === "labor" && eb.cook === null && p.inv.chemicals > 0,
+          );
+          this.addButton(`Charge entnehmen (+${METH_YIELD} Meth)`, { t: "harvest", buildingId: b.id }, (eb) =>
+            "kind" in eb &&
+            eb.kind === "labor" &&
+            eb.cook !== null &&
+            eb.cook >= 1 &&
+            eb.store + METH_YIELD <= LABOR_STORE_MAX,
+          );
+          this.addButton("Meth-Lager entnehmen", { t: "collect", buildingId: b.id }, (eb) =>
+            "kind" in eb && eb.kind === "labor" && eb.store > 0,
+          );
+          break;
       }
     }
 
@@ -130,9 +161,13 @@ export class Panels {
     this.buttons = [];
     this.actionsEl.replaceChildren();
 
-    this.addButton("1 Baggie verkaufen", { t: "sell", npcId: n.id }, (en, p) => {
+    this.addButton("1 Baggie verkaufen", { t: "sell", npcId: n.id, drug: "weed" }, (en, p) => {
       const npc = en as NpcSnapshot;
       return npc.cooldown === 0 && p.inv.baggies > 0;
+    });
+    this.addButton("1 Meth verkaufen", { t: "sell", npcId: n.id, drug: "meth" }, (en, p) => {
+      const npc = en as NpcSnapshot;
+      return npc.cooldown === 0 && p.inv.methBaggies > 0;
     });
 
     this.renderNpc(n, me);
@@ -227,7 +262,7 @@ export class Panels {
     this.actionsEl.appendChild(grid);
     const homeDistrict = districtIdAt(b.x, b.y);
     for (let d = 0; d < DISTRICT_GRID * DISTRICT_GRID; d++) {
-      const factor = this.priceFactors[d]!;
+      const factor = this.districts.find((x) => x.id === d)?.priceFactor ?? this.priceFactors[d]!;
       const control = this.controlFor(d);
       const el = this.addButton(
         `×${factor.toFixed(2)} · ${Math.round(control * 100)}%`,
@@ -297,6 +332,18 @@ export class Panels {
         lines.push(`Schmutziges Geld dabei: ${me.money.dirty} €`);
         break;
       }
+      case "labor":
+        this.titleEl.textContent = `Labor ${b.id}`;
+        lines.push(
+          b.cook === null
+            ? "Kocht: nichts"
+            : b.cook >= 1
+              ? "Charge: FERTIG — entnehmen!"
+              : `Kocht: ${Math.round(b.cook * 100)} % (${COOK_TIME_S} s)`,
+        );
+        lines.push(`Lager: ${b.store} / ${LABOR_STORE_MAX} Meth`);
+        lines.push(`Chemikalien dabei: ${me.inv.chemicals}`);
+        break;
     }
     const staff = this.workers.filter((w) => w.buildingId === b.id || w.targetBuildingId === b.id);
     if (staff.length > 0) {
@@ -311,18 +358,22 @@ export class Panels {
     this.titleEl.textContent = "Passant";
     const districtId = districtIdAt(Math.floor(n.x), Math.floor(n.y));
     const control = this.controlFor(districtId);
-    const price = baggiePriceWithControl(this.priceFactors, control, Math.floor(n.x), Math.floor(n.y));
-    const factor = this.priceFactors[districtId]!;
+    const factor = this.districts.find((x) => x.id === districtId)?.priceFactor ?? this.priceFactors[districtId]!;
+    const weedPrice = priceFromFactor(factor, control, BAGGIE_PRICE_BASE);
+    const methPrice = priceFromFactor(factor, control, METH_BAGGIE_PRICE_BASE);
     const lines = [
       `Distrikt-Faktor: ×${factor.toFixed(2)}`,
       `Revier-Kontrolle: ${Math.round(control * 100)} % ${control >= 0.5 ? "(dein Revier)" : "(Rivalen dominieren)"}`,
-      `Baggie-Preis hier: ${price} € (schmutzig)`,
+      `Baggie-Preis hier: ${weedPrice} € (schmutzig)`,
+      `Meth-Preis hier: ${methPrice} € (schmutzig)`,
       n.cooldown > 0 ? `Hat gerade gekauft — wartet noch ${n.cooldown} s` : "Kaufbereit",
-      `Baggies dabei: ${me.inv.baggies}`,
+      `Baggies dabei: ${me.inv.baggies} · Meth dabei: ${me.inv.methBaggies}`,
     ];
     this.bodyEl.innerHTML = lines.map((l) => `<div>${escapeHtml(l)}</div>`).join("");
-    const sellBtn = this.buttons[0];
-    if (sellBtn) sellBtn.el.textContent = `1 Baggie verkaufen (+${price} €)`;
+    const sellWeedBtn = this.buttons[0];
+    if (sellWeedBtn) sellWeedBtn.el.textContent = `1 Baggie verkaufen (+${weedPrice} €)`;
+    const sellMethBtn = this.buttons[1];
+    if (sellMethBtn) sellMethBtn.el.textContent = `1 Meth verkaufen (+${methPrice} €)`;
     this.refreshButtons(n, me);
   }
 }
