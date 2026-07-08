@@ -56,9 +56,10 @@ fi
 sudo install -m 440 -o root -g root "$TMP_SUDOERS" /etc/sudoers.d/koks
 rm -f "$TMP_SUDOERS"
 
-echo "==> Service aktivieren und starten"
+echo "==> Service aktivieren und (neu) starten"
 sudo systemctl daemon-reload
-sudo systemctl enable --now koks.service
+sudo systemctl enable koks.service
+sudo systemctl restart koks.service
 
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 IP="${IP:-<IP-des-Pi>}"
