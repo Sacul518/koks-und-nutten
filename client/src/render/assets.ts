@@ -35,7 +35,9 @@ const AVATAR_DIR_COLS: Record<Direction, number> = {
 };
 
 export type TileTextureName = keyof typeof TILE_COORDS;
-export type AvatarTextures = Record<Direction, Texture>;
+/** Je Blickrichtung 3 Frames: [Stand, Schritt A, Schritt B] — echter Lauf-Zyklus aus dem Kenney-Sheet. */
+export type AvatarFrames = [Texture, Texture, Texture];
+export type AvatarTextures = Record<Direction, AvatarFrames>;
 
 /** Aus Kenney-Tiles zusammengesetzte Gebäude-Bausteine (je 16×16). */
 export interface BuildingTextures {
@@ -49,8 +51,16 @@ export interface BuildingTextures {
   lineEmpty: [Texture, Texture];
   /** Wäscheleine behängt (links, rechts) */
   lineFull: [Texture, Texture];
-  /** Packtisch-Theke (links, rechts) */
+  /** Theke (Packtisch/Waschsalon/Bar/Labor) */
   counter: [Texture, Texture];
+  /** Warenkiste — unterscheidet den Packtisch */
+  produceCrate: Texture;
+  /** Waschmaschine — unterscheidet den Waschsalon */
+  washer: Texture;
+  /** Flaschenregal — unterscheidet die Bar */
+  bottleShelf: Texture;
+  /** Herd/Kochplatte — unterscheidet das Labor */
+  stove: Texture;
 }
 
 export interface GameTextures {
@@ -85,9 +95,13 @@ export async function loadTextures(): Promise<GameTextures> {
     Object.entries(TILE_COORDS).map(([name, [row, col]]) => [name, frame(row, col)]),
   ) as Record<TileTextureName, Texture>;
 
+  // Jedes Figuren-Set belegt 3 Zeilen im Sheet: Zeile+0 = Stand, +1/+2 = alternierende Schrittposen.
   const avatarSet = (row: number): AvatarTextures =>
     Object.fromEntries(
-      Object.entries(AVATAR_DIR_COLS).map(([dir, col]) => [dir, frame(row, col)]),
+      Object.entries(AVATAR_DIR_COLS).map(([dir, col]) => [
+        dir,
+        [frame(row, col), frame(row + 1, col), frame(row + 2, col)] as AvatarFrames,
+      ]),
     ) as AvatarTextures;
 
   return {
@@ -101,6 +115,10 @@ export async function loadTextures(): Promise<GameTextures> {
       lineEmpty: [indoor(1, 16), indoor(1, 18)],
       lineFull: [indoor(2, 16), indoor(2, 18)],
       counter: [indoor(12, 4), indoor(12, 5)],
+      produceCrate: frame(10, 6),
+      washer: frame(12, 9),
+      bottleShelf: frame(11, 6),
+      stove: indoor(14, 14),
     },
   };
 }

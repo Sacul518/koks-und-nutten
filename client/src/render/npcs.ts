@@ -1,11 +1,16 @@
 import { Container, Sprite } from "pixi.js";
-import { TICK_MS, TILE_SIZE, type NpcSnapshot } from "@koks/shared";
+import { TICK_MS, TILE_SIZE, type Direction, type NpcSnapshot } from "@koks/shared";
 import type { AvatarTextures, GameTextures } from "./assets.ts";
+import { walkFrame } from "./animation.ts";
+import { hashOffset } from "./hashOffset.ts";
 
 interface RenderedNpc {
   root: Container;
   sprite: Sprite;
   avatarSet: AvatarTextures;
+  dir: Direction;
+  moving: boolean;
+  animOffset: number;
   prevX: number;
   prevY: number;
   targetX: number;
@@ -38,7 +43,8 @@ export class NpcLayer {
       rn.targetX = worldX;
       rn.targetY = worldY;
       rn.snapshotTime = now;
-      rn.sprite.texture = rn.avatarSet[n.dir];
+      rn.dir = n.dir;
+      rn.moving = n.moving;
       rn.sprite.alpha = n.cooldown > 0 ? 0.5 : 1;
     }
     for (const id of this.npcs.keys()) {
@@ -55,6 +61,7 @@ export class NpcLayer {
       rn.root.x = rn.prevX + (rn.targetX - rn.prevX) * t;
       rn.root.y = rn.prevY + (rn.targetY - rn.prevY) * t;
       rn.root.zIndex = rn.root.y;
+      rn.sprite.texture = walkFrame(rn.avatarSet[rn.dir], rn.moving, now, rn.animOffset);
     }
   }
 
@@ -62,10 +69,22 @@ export class NpcLayer {
     const root = new Container();
     root.position.set(x, y);
     const avatarSet = this.textures.npcs[n.skin % this.textures.npcs.length]!;
-    const sprite = new Sprite(avatarSet[n.dir]);
+    const sprite = new Sprite(avatarSet[n.dir][0]);
     sprite.anchor.set(0.5, 0.75);
     root.addChild(sprite);
     this.container.addChild(root);
-    return { root, sprite, avatarSet, prevX: x, prevY: y, targetX: x, targetY: y, snapshotTime: 0 };
+    return {
+      root,
+      sprite,
+      avatarSet,
+      dir: n.dir,
+      moving: n.moving,
+      animOffset: hashOffset(n.id),
+      prevX: x,
+      prevY: y,
+      targetX: x,
+      targetY: y,
+      snapshotTime: 0,
+    };
   }
 }

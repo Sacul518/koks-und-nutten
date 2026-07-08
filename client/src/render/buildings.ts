@@ -78,6 +78,14 @@ export class BuildingLayer {
         for (let ty = 0; ty < 2; ty++) for (let tx = 0; tx < 2; tx++) put(tex.floor, tx, ty);
         put(tex.counter[0], 0, 0.7);
         put(tex.counter[1], 1, 0.7);
+        // Ein Requisit je Gebäudeart, damit die vier sonst identischen Theken-Bauten optisch unterscheidbar sind.
+        const prop = {
+          packtisch: tex.produceCrate,
+          waschsalon: tex.washer,
+          bar: tex.bottleShelf,
+          labor: tex.stove,
+        }[b.kind];
+        put(prop, 0.5, 0.05);
         break;
       }
     }

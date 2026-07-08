@@ -1,6 +1,8 @@
 import { Container, Sprite, Text } from "pixi.js";
-import { TICK_MS, TILE_SIZE, WORKER_SPECS, type WorkerKind, type WorkerSnapshot } from "@koks/shared";
+import { TICK_MS, TILE_SIZE, WORKER_SPECS, type Direction, type WorkerKind, type WorkerSnapshot } from "@koks/shared";
 import type { AvatarTextures, GameTextures } from "./assets.ts";
+import { walkFrame } from "./animation.ts";
+import { hashOffset } from "./hashOffset.ts";
 
 /** Einfärbung + Sprite-Set je Beruf (Figuren-Zeilen 12/15 teilen sie sich mit den Passanten). */
 const WORKER_LOOK: Record<WorkerKind, { tint: number; skin: number }> = {
@@ -14,6 +16,9 @@ interface RenderedWorker {
   sprite: Sprite;
   label: Text;
   avatarSet: AvatarTextures;
+  dir: Direction;
+  moving: boolean;
+  animOffset: number;
   prevX: number;
   prevY: number;
   targetX: number;
@@ -46,7 +51,8 @@ export class WorkerLayer {
       rw.targetX = worldX;
       rw.targetY = worldY;
       rw.snapshotTime = now;
-      rw.sprite.texture = rw.avatarSet[w.dir];
+      rw.dir = w.dir;
+      rw.moving = w.moving;
       rw.root.alpha = w.paused ? 0.45 : 1;
       rw.label.text = w.paused ? `${WORKER_SPECS[w.kind].name} · Pause` : WORKER_SPECS[w.kind].name;
     }
@@ -64,6 +70,7 @@ export class WorkerLayer {
       rw.root.x = rw.prevX + (rw.targetX - rw.prevX) * t;
       rw.root.y = rw.prevY + (rw.targetY - rw.prevY) * t;
       rw.root.zIndex = rw.root.y;
+      rw.sprite.texture = walkFrame(rw.avatarSet[rw.dir], rw.moving, now, rw.animOffset);
     }
   }
 
@@ -72,7 +79,7 @@ export class WorkerLayer {
     root.position.set(x, y);
     const look = WORKER_LOOK[w.kind];
     const avatarSet = this.textures.npcs[look.skin % this.textures.npcs.length]!;
-    const sprite = new Sprite(avatarSet[w.dir]);
+    const sprite = new Sprite(avatarSet[w.dir][0]);
     sprite.anchor.set(0.5, 0.75);
     sprite.tint = look.tint;
     root.addChild(sprite);
@@ -91,6 +98,19 @@ export class WorkerLayer {
     root.addChild(label);
 
     this.container.addChild(root);
-    return { root, sprite, label, avatarSet, prevX: x, prevY: y, targetX: x, targetY: y, snapshotTime: 0 };
+    return {
+      root,
+      sprite,
+      label,
+      avatarSet,
+      dir: w.dir,
+      moving: w.moving,
+      animOffset: hashOffset(w.id),
+      prevX: x,
+      prevY: y,
+      targetX: x,
+      targetY: y,
+      snapshotTime: 0,
+    };
   }
 }

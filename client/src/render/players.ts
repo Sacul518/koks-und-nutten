@@ -1,11 +1,17 @@
 import { Container, Sprite, Text } from "pixi.js";
-import { TICK_MS, TILE_SIZE, type PlayerSnapshot } from "@koks/shared";
+import { TICK_MS, TILE_SIZE, type Direction, type PlayerSnapshot } from "@koks/shared";
 import type { AvatarTextures, GameTextures } from "./assets.ts";
+import { walkFrame } from "./animation.ts";
+import { hashOffset } from "./hashOffset.ts";
 
 interface RenderedPlayer {
   root: Container;
   sprite: Sprite;
   avatarSet: AvatarTextures;
+  dir: Direction;
+  moving: boolean;
+  /** Streut die Lauf-Animation zeitlich, damit nicht alle Figuren synchron im Gleichschritt laufen. */
+  animOffset: number;
   prevX: number;
   prevY: number;
   targetX: number;
@@ -37,7 +43,8 @@ export class PlayerLayer {
       rp.targetX = worldX;
       rp.targetY = worldY;
       rp.snapshotTime = now;
-      rp.sprite.texture = rp.avatarSet[p.dir];
+      rp.dir = p.dir;
+      rp.moving = p.moving;
     }
     for (const id of this.players.keys()) {
       if (!seen.has(id)) this.remove(id);
@@ -50,6 +57,7 @@ export class PlayerLayer {
       rp.root.x = rp.prevX + (rp.targetX - rp.prevX) * t;
       rp.root.y = rp.prevY + (rp.targetY - rp.prevY) * t;
       rp.root.zIndex = rp.root.y;
+      rp.sprite.texture = walkFrame(rp.avatarSet[rp.dir], rp.moving, now, rp.animOffset);
     }
   }
 
@@ -71,7 +79,7 @@ export class PlayerLayer {
     root.position.set(x, y);
 
     const avatarSet = this.textures.avatars[p.avatar % this.textures.avatars.length]!;
-    const sprite = new Sprite(avatarSet[p.dir]);
+    const sprite = new Sprite(avatarSet[p.dir][0]);
     sprite.anchor.set(0.5, 0.75);
     root.addChild(sprite);
 
@@ -93,6 +101,9 @@ export class PlayerLayer {
       root,
       sprite,
       avatarSet,
+      dir: p.dir,
+      moving: p.moving,
+      animOffset: hashOffset(p.id),
       prevX: x,
       prevY: y,
       targetX: x,
