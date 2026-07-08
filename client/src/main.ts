@@ -24,6 +24,10 @@ import { Hud } from "./ui/hud.ts";
 import { Panels } from "./ui/panels.ts";
 import { BuildMode } from "./ui/buildmode.ts";
 import { LedgerScreen } from "./ui/ledger.ts";
+import { InventoryScreen } from "./ui/inventory.ts";
+import { SettingsScreen, loadPerfMode } from "./ui/settings.ts";
+
+const NAME_KEY = "koks-name";
 
 const overlay = document.getElementById("join-overlay")!;
 const form = document.getElementById("join-form") as HTMLFormElement;
@@ -32,6 +36,10 @@ const joinButton = document.getElementById("join-button") as HTMLButtonElement;
 const errorLine = document.getElementById("join-error")!;
 const hudRoot = document.getElementById("hud")!;
 const playerList = document.getElementById("player-list")!;
+const reconnectBanner = document.getElementById("reconnect-banner")!;
+
+const savedName = localStorage.getItem(NAME_KEY);
+if (savedName) nameInput.value = savedName;
 
 let started = false;
 
@@ -44,6 +52,7 @@ form.addEventListener("submit", (e) => {
   startGame(name)
     .then(() => {
       started = true;
+      localStorage.setItem(NAME_KEY, name);
       overlay.hidden = true;
       hudRoot.hidden = false;
     })
@@ -58,13 +67,14 @@ form.addEventListener("submit", (e) => {
 async function startGame(name: string): Promise<void> {
   const conn = new Connection();
   const welcome = await conn.join(name);
+  let myId = welcome.id;
 
   const app = new Application();
   await app.init({
     resizeTo: window,
     background: 0x14161c,
     antialias: false,
-    resolution: window.devicePixelRatio || 1,
+    resolution: loadPerfMode() ? 1 : window.devicePixelRatio || 1,
     autoDensity: true,
   });
   document.getElementById("game")!.appendChild(app.canvas);
@@ -91,6 +101,23 @@ async function startGame(name: string): Promise<void> {
   const hud = new Hud();
   const panels = new Panels((msg) => conn.send(msg), priceFactors);
   const ledger = new LedgerScreen((msg) => conn.send(msg), priceFactors);
+  const inventory = new InventoryScreen();
+
+  const leaveGame = (message: string): void => {
+    conn.disconnect();
+    started = false;
+    panels.close();
+    buildMode.cancel();
+    ledger.close();
+    inventory.close();
+    settings.close();
+    reconnectBanner.hidden = true;
+    overlay.hidden = false;
+    hudRoot.hidden = true;
+    errorLine.textContent = message;
+    app.destroy(true, { children: true });
+  };
+  const settings = new SettingsScreen(() => leaveGame(""));
 
   let latest: {
     players: PlayerSnapshot[];
@@ -105,7 +132,7 @@ async function startGame(name: string): Promise<void> {
     workers: [],
     districts: [],
   };
-  const me = (): PlayerSnapshot | undefined => latest.players.find((p) => p.id === welcome.id);
+  const me = (): PlayerSnapshot | undefined => latest.players.find((p) => p.id === myId);
 
   const buildMode = new BuildMode({
     map,
@@ -120,6 +147,8 @@ async function startGame(name: string): Promise<void> {
   });
   (document.getElementById("build-button") as HTMLButtonElement).onclick = () => buildMode.toggleMenu();
   (document.getElementById("ledger-button") as HTMLButtonElement).onclick = () => ledger.toggle();
+  (document.getElementById("inventory-button") as HTMLButtonElement).onclick = () => inventory.toggle();
+  (document.getElementById("settings-button") as HTMLButtonElement).onclick = () => settings.toggle();
 
   conn.onSnapshot = (msg) => {
     latest = {
@@ -136,6 +165,7 @@ async function startGame(name: string): Promise<void> {
     workers.applySnapshot(msg.workers, now);
     const my = me();
     if (my) hud.update(my);
+    inventory.update(my);
     panels.setDistricts(msg.districts);
     panels.refresh(msg.buildings, msg.npcs, msg.workers, my);
     ledger.update({
@@ -147,7 +177,7 @@ async function startGame(name: string): Promise<void> {
       lifetimeProfit: msg.lifetimeProfit,
     });
     buildMode.refresh();
-    updatePlayerList(msg.players, welcome.id);
+    updatePlayerList(msg.players, myId);
   };
   conn.onActionError = (reason) => hud.toast(reason, "error");
   conn.onSold = (price) => hud.toast(`Verkauft: +${price} € (schmutzig)`, "ok");
@@ -157,16 +187,18 @@ async function startGame(name: string): Promise<void> {
   conn.onIntercepted = (_workerId, lossValue) =>
     hud.toast(`Kurier abgefangen: ${lossValue} € Warenverlust!`, "error");
   conn.onEvent = (_kind, text) => hud.toast(text, "info");
-  conn.onDisconnect = () => {
-    started = false;
-    panels.close();
-    buildMode.cancel();
-    ledger.close();
-    overlay.hidden = false;
-    hudRoot.hidden = true;
-    errorLine.textContent = "Verbindung zum Server verloren. Bitte neu beitreten.";
-    app.destroy(true, { children: true });
+  conn.onReconnecting = (attempt) => {
+    reconnectBanner.hidden = false;
+    reconnectBanner.textContent =
+      attempt === 1
+        ? "Verbindung unterbrochen — verbinde erneut …"
+        : `Verbindung unterbrochen — verbinde erneut … (Versuch ${attempt})`;
   };
+  conn.onReconnected = (w) => {
+    myId = w.id;
+    reconnectBanner.hidden = true;
+  };
+  conn.onReconnectFailed = (reason) => leaveGame(`${reason} Bitte neu beitreten.`);
 
   const npcAt = (tx: number, ty: number): NpcSnapshot | null => {
     let best: NpcSnapshot | null = null;
@@ -219,10 +251,14 @@ async function startGame(name: string): Promise<void> {
     onRecenter: () => camera.recenter(),
     onBuildToggle: () => buildMode.toggleMenu(),
     onLedgerToggle: () => ledger.toggle(),
+    onInventoryToggle: () => inventory.toggle(),
+    onSettingsToggle: () => settings.toggle(),
     onEscape: () => {
       buildMode.cancel();
       panels.close();
       ledger.close();
+      inventory.close();
+      settings.close();
     },
   });
 
@@ -231,7 +267,7 @@ async function startGame(name: string): Promise<void> {
     players.update(now);
     npcs.update(now);
     workers.update(now);
-    camera.follow(players.position(welcome.id));
+    camera.follow(players.position(myId));
     camera.apply(worldRoot, app.screen.width, app.screen.height);
   });
 }

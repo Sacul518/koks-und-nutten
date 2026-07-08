@@ -148,12 +148,17 @@ export const COOK_TIME_S = 70;
 export const METH_YIELD = 2;
 /** Maximale Einheiten im Labor-Zwischenlager (fertig, noch nicht entnommen). */
 export const LABOR_STORE_MAX = 8;
-/** Basispreis eines Meth-Baggies (deutlich höhere Marge als Weed). */
-export const METH_BAGGIE_PRICE_BASE = 45;
+/**
+ * Basispreis eines Meth-Baggies. Marge/Baggie bei diesem Wert: 60 - 30 (Chemikalie/Yield) = 30 €
+ * gegenüber 11,67 €/Baggie bei Weed — ca. das 2,6-fache, was das 2,5-fache Heat-Risiko
+ * (METH_HEAT_PER_SALE) und die Labor-Freischalt-Hürde rechtfertigt. Bei den ursprünglichen 45 €
+ * lag die Marge nur ca. 29 % über Weed trotz des deutlich höheren Risikos.
+ */
+export const METH_BAGGIE_PRICE_BASE = 60;
 /** Heat-Zuwachs pro verkauftem Meth-Baggie (deutlich höher als bei Weed). */
 export const METH_HEAT_PER_SALE = 10;
-/** Geldwert einer beschlagnahmten Labor-Lagereinheit (Random Events). */
-export const RAID_VALUE_PER_METH_STORE = 20;
+/** Geldwert einer beschlagnahmten Labor-Lagereinheit (Random Events) — analog RAID_VALUE_PER_BAGGIE = BAGGIE_PRICE_BASE. */
+export const RAID_VALUE_PER_METH_STORE = METH_BAGGIE_PRICE_BASE;
 
 /** Abstand zwischen Random Events in Sekunden (läuft mit TIME_SCALE), zufällig in dieser Spanne. */
 export const EVENT_INTERVAL_MIN_S = 90;

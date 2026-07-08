@@ -9,6 +9,10 @@ export interface ControlCallbacks {
   onBuildToggle: () => void;
   /** Taste L: Buchhaltung (Ledger) öffnen/schließen */
   onLedgerToggle: () => void;
+  /** Taste I: Inventar öffnen/schließen */
+  onInventoryToggle: () => void;
+  /** Taste O: Optionen öffnen/schließen */
+  onSettingsToggle: () => void;
   /** Escape: Baumodus/Panel schließen */
   onEscape: () => void;
 }
@@ -127,6 +131,14 @@ export function attachControls(target: HTMLElement, cb: ControlCallbacks): void 
     }
     if (key === "l") {
       cb.onLedgerToggle();
+      return;
+    }
+    if (key === "i") {
+      cb.onInventoryToggle();
+      return;
+    }
+    if (key === "o") {
+      cb.onSettingsToggle();
       return;
     }
     if (key === "escape") {

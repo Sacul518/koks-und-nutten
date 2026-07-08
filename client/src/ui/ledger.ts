@@ -141,6 +141,7 @@ export class LedgerScreen {
         `<div>${Math.round(control * 100)} % Kontrolle</div>`,
         `<div>×${(dist?.priceFactor ?? 1).toFixed(2)} Preis</div>`,
         `<div>×${(dist?.policeMultiplier ?? 1).toFixed(2)} Polizei</div>`,
+        `<div>Rivalen: ${(dist?.rivalStrength ?? 0).toFixed(2)}</div>`,
       ].join("");
       this.districtsEl.appendChild(tile);
     }

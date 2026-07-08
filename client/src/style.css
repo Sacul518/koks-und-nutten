@@ -186,16 +186,22 @@ body {
 
 /* ── Buttons & Panels (Touch: min. 44px hoch) ── */
 
-#build-button {
+#build-button,
+#ledger-button,
+#inventory-button,
+#settings-button {
   position: absolute;
   right: 0.75rem;
-  bottom: max(0.75rem, env(safe-area-inset-bottom));
   pointer-events: auto;
   min-height: 48px;
   padding: 0.6rem 1.2rem;
   font-size: 1.05rem;
-  border: none;
   border-radius: 0.6rem;
+}
+
+#build-button {
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  border: none;
   background: #4a6cf7;
   color: white;
 }
@@ -204,25 +210,34 @@ body {
   background: #3a56c4;
 }
 
-#ledger-button {
-  position: absolute;
-  right: 0.75rem;
-  bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 58px);
-  pointer-events: auto;
-  min-height: 48px;
-  padding: 0.6rem 1.2rem;
-  font-size: 1.05rem;
+#ledger-button,
+#inventory-button,
+#settings-button {
   border: 1px solid #3a3d4a;
-  border-radius: 0.6rem;
   background: #2a2d38;
   color: #e8e8ee;
 }
 
-#ledger-button:active {
+#ledger-button:active,
+#inventory-button:active,
+#settings-button:active {
   background: #20222b;
 }
 
-#toast {
+#ledger-button {
+  bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 58px);
+}
+
+#inventory-button {
+  bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 116px);
+}
+
+#settings-button {
+  bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + 174px);
+}
+
+#toast,
+#reconnect-banner {
   position: absolute;
   top: max(3.5rem, calc(env(safe-area-inset-top) + 2.75rem));
   left: 50%;
@@ -244,6 +259,11 @@ body {
 
 #toast.info {
   background: rgba(45, 70, 130, 0.92);
+}
+
+#reconnect-banner {
+  background: rgba(150, 105, 20, 0.92);
+  pointer-events: none;
 }
 
 #build-menu,
@@ -403,9 +423,9 @@ body {
   display: none;
 }
 
-/* ── M3: Buchhaltung (Ledger, Taste L) ── */
+/* ── Vollbild-Overlays (Ledger, Inventar, Settings) ── */
 
-#ledger {
+.overlay {
   position: fixed;
   inset: 0;
   z-index: 8;
@@ -416,19 +436,25 @@ body {
   pointer-events: auto;
 }
 
-/* muss die display:flex-Regel oben schlagen, sonst bleibt der Ledger sichtbar (s. Join-Overlay-Fix) */
-#ledger[hidden] {
+/* muss die display:flex-Regel oben schlagen, sonst bleibt das Overlay sichtbar (s. Join-Overlay-Fix) */
+.overlay[hidden] {
   display: none;
 }
 
-#ledger-box {
-  width: min(34rem, calc(100vw - 1.5rem));
+.overlay-box {
+  width: min(26rem, calc(100vw - 1.5rem));
   max-height: calc(100vh - 3rem);
   overflow-y: auto;
   background: rgba(24, 26, 34, 0.97);
   border: 1px solid #3a3d4a;
   border-radius: 0.75rem;
   padding: 1rem;
+}
+
+/* ── M3: Buchhaltung (Ledger, Taste L) ── */
+
+#ledger-box {
+  width: min(34rem, calc(100vw - 1.5rem));
 }
 
 #ledger-period {
@@ -576,4 +602,72 @@ body {
   color: #9a9aa8;
   font-size: 0.9rem;
   padding: 0.5rem 0;
+}
+
+/* ── M7: Inventar (Taste I) ── */
+
+.inv-section-title {
+  font-size: 0.78rem;
+  color: #9a9aa8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0.75rem 0 0.35rem;
+}
+
+.inv-section-title:first-child {
+  margin-top: 0;
+}
+
+.inv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid #2a2d38;
+  font-size: 0.92rem;
+}
+
+.inv-row:last-child {
+  border-bottom: none;
+}
+
+.inv-row-value {
+  font-variant-numeric: tabular-nums;
+  color: #e8e8ee;
+}
+
+/* ── M7: Einstellungen (Taste O) ── */
+
+.settings-row {
+  padding: 0.7rem 0;
+  border-bottom: 1px solid #2a2d38;
+}
+
+.settings-row:last-of-type {
+  border-bottom: none;
+}
+
+.settings-row label {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+}
+
+.settings-row input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.settings-hint {
+  font-size: 0.78rem;
+  color: #9a9aa8;
+  margin: 0.25rem 0 0 2.15rem;
+}
+
+#leave-button {
+  margin-top: 0.75rem;
+  background: #5a2020;
+  color: #ffb3b3;
 }
