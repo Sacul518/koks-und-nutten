@@ -63,9 +63,9 @@ Am Ende zeigt das Skript die Adressen an. Du solltest sehen:
 
 ## 4. Testen
 
-- Im Browser (Mac oder iPad im selben WLAN): `http://<IP-des-Pi>:3000`
+- Im Browser (Mac oder iPad im selben WLAN): `http://<IP-des-Pi>:8080`
   → Name eingeben, beitreten.
-- Admin-Panel: `http://<IP-des-Pi>:3000/admin` → Passwort eingeben
+- Admin-Panel: `http://<IP-des-Pi>:8080/admin` → Passwort eingeben
   → Status (Spieler, Uptime, Ticks/s, letzter Save) erscheint.
 - Kaltstart-Test: Pi vom Strom trennen, wieder einstecken, ~1 Minute warten
   → Spiel ist ohne Handgriff wieder erreichbar.

@@ -16,7 +16,7 @@ ExecStart=__NODE__ server/dist/index.js
 Restart=on-failure
 RestartSec=3
 Environment=NODE_ENV=production
-Environment=PORT=3000
+Environment=PORT=8080
 Environment=ADMIN_PASSWORD=__ADMIN_PASSWORD__
 # Nur mit SHUTDOWN_ENABLED=1 fährt der Shutdown-Button den Rechner wirklich
 # herunter. In der Entwicklung (Variable nicht gesetzt) wird nur gespeichert.
